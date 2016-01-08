@@ -120,7 +120,7 @@ date_range = [20130702,
               20150820,
               20150930,
               20151002]
-i = 0
+i = 1
 z = pandas.read_csv('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/vabeach_daily_sum.csv')
 for date in date_range:
     print "analyzing data for {}".format(str(date))
@@ -142,15 +142,21 @@ for date in date_range:
 
     sp = cvmodel(P, spherical, hs, bw)
     subplot(10, 2, i)
-    plot(sv[0], sv[1], '.-')
+    plot(sv[0], sv[1], '.-', lw=0.8, ms=4)
     nugget = sv[1][0]
     model_results = [r + nugget for r in sp(sv[0])]
-    plot(sv[0], model_results)
+    plot(sv[0], model_results, color="r", lw=0.8)
     # figure(figsize=(7, 4))
-    title(str(date), fontsize=7)
-    tick_params(labelsize=7)
+    if i == 19 or i == 20:
+        xlabel('Lag [m]', fontsize=4)
+    if i % 2 == 1:
+        ylabel('Semivariance', fontsize=4)
+    title((datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%m/%d/%y')), fontsize=5)
+    tick_params(labelsize=4, length=2)
+    grid( color='0.65')
 
     i += 1
-savefig('semivariogram_figure/semivariogram_model {}.png'.format(str(date)), fmt='png', dpi=200, bbox_inches='tight')
 
+tight_layout(pad=0.05, w_pad=0.05, h_pad=0.05)
+savefig('semivariogram_figure/semivariogram_model {}.png'.format(str(date)), fmt='png', dpi=200, bbox_inches='tight')
 
