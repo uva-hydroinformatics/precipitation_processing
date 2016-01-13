@@ -164,8 +164,7 @@ def create_semivariogram(df, name, date_range, bw, hs):
 
         i += 1
     tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model1 {}.png'
-            .format(name), fmt='png', dpi=200, bbox_inches='tight')
+    savefig('semivariogram_figure/semivariogram_model {}.png'.format(name), fmt='png', dpi=200, bbox_inches='tight')
     close()
 
     #plot the combined semivariogram
@@ -181,9 +180,7 @@ def create_semivariogram(df, name, date_range, bw, hs):
     title('average semi-variogram for {}'.format(name))
     tick_params(labelsize=4, length=2)
     grid( color='0.65')
-
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model_AVE1 {}.png'
-            .format(name), fmt='png', dpi=200, bbox_inches='tight')
+    savefig('semivariogram_figure/semivariogram_model_AVE {}.png'.format(name), fmt='png', dpi=200, bbox_inches='tight')
     close()
 
 
