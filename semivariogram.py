@@ -141,7 +141,13 @@ def create_semivariogram(df, name, date_range, bw, hs):
         sv = SV(P, hs, bw)
         #add sv to combined semivariogram
         if i == 1:
-            sv_combined.append(sv[0])
+            ave_df = sv
+        else:
+            for w in range(len(sv[0])):
+                for j in range(len(ave_df[0])):
+                    if sv[0][w] == ave_df[0][j]:
+                        ave_df[1][j] = (ave_df[1][j] + sv[0][w])*0.5
+                    continue
         sv_combined.append(sv[1])
         #create the model
         sp = cvmodel(P, spherical, hs, bw)
