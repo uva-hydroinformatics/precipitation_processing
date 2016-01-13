@@ -1,3 +1,8 @@
+# Purpose: Takes a time series and prints some summary stats about the time intervals. Originally designed to do this
+# for rainfall data from weatherunderground
+# Authors: J. Sadler, M. Morsy, University of Virginia
+# Email: jms3fb@virginia.edu
+# Original date: 1/13/2016
 
 import pyodbc
 import pandas
@@ -17,6 +22,7 @@ a = np.array(rows)
 df = pandas.DataFrame(a, columns=[i[0] for i in cur.description])
 times = df['datetime']
 intervals = list()
+# get intervals in seconds
 for i in range(len(times)-1):
     intervals.append((times[i+1] - times[i]).seconds)
 intervals_arr = np.array(intervals)
