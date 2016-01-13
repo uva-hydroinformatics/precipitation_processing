@@ -8,7 +8,7 @@ from pylab import *
 import numpy as np
 import pandas
 from scipy.spatial.distance import pdist, squareform
-
+import pyodbc
 
 
 def plot_stations(z):
@@ -107,16 +107,36 @@ def cvmodel(P, model, hs, bw):
     return covfct
 
 
+def get_data_frame_from_table(table_name):
+
+    # set up db connection
+    MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb"; DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
+
+    # connect to db
+    con = pyodbc.connect('DRIVER={};DBQ={};PWD={}'.format(DRV,MDB,PWD))
+    cur = con.cursor()
+
+    # run a query and get the results
+    SQL = 'SELECT * FROM {};'.format(table_name) # your query goes here
+    rows = cur.execute(SQL).fetchall()
+    a = np.array(rows)
+    df = pandas.DataFrame(a, columns=[i[0] for i in cur.description])
+    cur.close()
+    con.close()
+    return df
+
+
+
 def create_semivariogram(df, name, date_range, bw, hs):
     print 'doing data for {}'.format(name)
     i = 1
     sv_combined = list()
     for date in date_range:
         print 'analyzing data for {}'.format(str(date))
-        df_for_date = df[df['date'] == date]
+        df_for_date = df[df['date'] == datetime.datetime.strptime(str(date), "%Y%m%d")]
         if len(df_for_date) == 0:
             continue
-        P = np.array(df_for_date[['x', 'y', 'rain']])
+        P = np.array(df_for_date[['x', 'y', 'rain']], dtype=float)
         P = P[~np.isnan(P).any(axis=1)]
         sv = SV(P, hs, bw)
         #add sv to combined semivariogram
@@ -144,7 +164,8 @@ def create_semivariogram(df, name, date_range, bw, hs):
 
         i += 1
     tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-    savefig('semivariogram_figure/semivariogram_model {}.png'.format(name), fmt='png', dpi=200, bbox_inches='tight')
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model1 {}.png'
+            .format(name), fmt='png', dpi=200, bbox_inches='tight')
     close()
 
     #plot the combined semivariogram
@@ -160,7 +181,9 @@ def create_semivariogram(df, name, date_range, bw, hs):
     title('average semi-variogram for {}'.format(name))
     tick_params(labelsize=4, length=2)
     grid( color='0.65')
-    savefig('semivariogram_figure/semivariogram_model_AVE {}.png'.format(name), fmt='png', dpi=200, bbox_inches='tight')
+
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model_AVE1 {}.png'
+            .format(name), fmt='png', dpi=200, bbox_inches='tight')
     close()
 
 
@@ -186,23 +209,21 @@ date_range = [20130702,
               20151002]
 
 df_list = []
-path = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
-file_name_list = ['wu_daily_sum', 'vabeach_daily_sum_reformat_in']
-ext = 'csv'
-for file_name in file_name_list:
-    df = pandas.read_csv('{}{}.{}'.format(path, file_name, ext))
-    df_list.append({'df': df, 'name': file_name})
-combined_df = pandas.DataFrame(columns=['x','y','rain'])
-for df in df_list:
-    combined_df = combined_df.append(df['df'], ignore_index=True)
-df_list.append({'df': combined_df, 'name': 'combined'})
+table_name_list = ['vabeach_daily_tots_reformat']
+df = get_data_frame_from_table(table_name_list[0])
+df_list.append(df)
+# df_list = [get_data_frame_from_table(table) in table_name_list]
+# combined_df = pandas.DataFrame(columns=['x','y','rain'])
+# for df in df_list:
+#     combined_df = combined_df.append(df, ignore_index=True)
+# df_list.append({'df': combined_df, 'name': 'combined'})
 
 for df in df_list:
-    P = np.array(df['df'][['x', 'y', 'rain']])
+    P = np.array(df[['x', 'y', 'rain']], dtype=np.float)
     P = P[~np.isnan(P).any(axis=1)]
     # bandwidth, plus or minus bw meters. Here we are using the 10th percentile
     pd = squareform(pdist(P[:, :2]))
     bw = np.percentile(pd[np.nonzero(pd)], 10)
     # lags in bw meter increments from zero to the max distance
     hs = np.arange(0, np.amax(pd), bw)
-    create_semivariogram(df['df'], df['name'], date_range, bw, hs)
+    create_semivariogram(df, '', date_range, bw, hs)
