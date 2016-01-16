@@ -33,7 +33,7 @@ def SVh(P, h, bw):
     for i in range(N):
         for j in range(i + 1, N):
             if (pd[i, j] >= h - bw) and (pd[i, j] <= h + bw):
-                Z.append((P[i, 2] - P[j, 2]) ** 2.0)
+                Z.append(((P[i, 2] - P[j, 2]) ** 2.0))
     return np.sum(Z) / (2.0 * len(Z))
 
 
@@ -125,18 +125,47 @@ def get_data_frame_from_table(table_name):
     con.close()
     return df
 
+def aggregate_time_steps(df_date, hours, date, wu):
+    # return a dataframe with the sum of the rainfall at a given point for a given time span
+    date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
+    df_date = df[date_string]
+    df_date = df_date.groupby(['x', 'y'])
+    df_date = df_date.resample('D', how={'precip_mm': 'sum'})
+    df_date = df_date.reset_index(inplace=False)
+    if wu == True:
+        newdf = pandas.DataFrame()
+        for group in df_date:
+            xy_df = group[1]
+            cum_precip_arr = np.array(xy_df['precip_mm'])
+            if cum_precip_arr[0]>0:
+                incr_precip = [cum_precip_arr[0]] #TODO: decide whether or not to keep this or make it zero to begin with
+            else:
+                incr_precip = [0]
+            for i in range(len(cum_precip_arr)-1):
+                if cum_precip_arr[i+1] >= cum_precip_arr[i]:
+                    incr_precip.append(cum_precip_arr[i+1] - cum_precip_arr[i])
+                else:
+                    incr_precip.append(cum_precip_arr[i+1])
+            xy_df.loc[:, 'precip_mm'] = incr_precip
+            newdf = newdf.append(xy_df)
+        newdf = newdf.groupby(['x', 'y', 'site_name'])
+        newdf = newdf.resample('D', how={'precip_mm': 'sum'})
+        newdf = newdf.reset_index(inplace=False)
+        return newdf
+    else:
+        return df_date
 
 
 def create_semivariogram(df, name, date_range, bw, hs):
     print 'doing data for {}'.format(name)
     i = 1
-    sv_combined = list()
     for date in date_range:
-        print 'analyzing data for {}'.format(str(date))
-        df_for_date = df[df['date'] == datetime.datetime.strptime(str(date), "%Y%m%d")]
+        print 'creating semivariagram for {}'.format(str(date))
+        dfdates = df['datetime']
+        df_for_date = df[df['datetime'] == datetime.datetime.strptime(str(date), "%Y%m%d")]
         if len(df_for_date) == 0:
             continue
-        P = np.array(df_for_date[['x', 'y', 'rain']], dtype=float)
+        P = np.array(df_for_date[['x', 'y', 'precip_mm']], dtype=float)
         P = P[~np.isnan(P).any(axis=1)]
         sv = SV(P, hs, bw)
         #add sv to combined semivariogram
@@ -146,9 +175,7 @@ def create_semivariogram(df, name, date_range, bw, hs):
             for w in range(len(sv[0])):
                 for j in range(len(ave_df[0])):
                     if sv[0][w] == ave_df[0][j]:
-                        ave_df[1][j] = (ave_df[1][j] + sv[0][w])*0.5
-                    continue
-        sv_combined.append(sv[1])
+                        ave_df[1][j] = (ave_df[1][j] + sv[1][w])*0.5
         #create the model
         sp = cvmodel(P, spherical, hs, bw)
         #plot the data and the model
@@ -170,23 +197,30 @@ def create_semivariogram(df, name, date_range, bw, hs):
 
         i += 1
     tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-    savefig('semivariogram_figure/semivariogram_model {}.png'.format(name), fmt='png', dpi=200, bbox_inches='tight')
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model 3{}.png'
+            .format(name),
+            fmt='png',
+            dpi=400,
+            bbox_inches='tight')
     close()
 
     #plot the combined semivariogram
-    sv_combined_array = np.array(sv_combined)
-    sv_array_average = np.mean(sv_combined_array[1:, :], axis=0)
-    plot(sv_combined_array[0], sv_array_average, '.--', lw=0.8, ms=4)
-    nugget = sv[1][0]
+    sp = cvmodel(P, spherical, hs, bw)
+    plot(ave_df[0], ave_df[1]/np.var(P[:, 2]), '.--', lw=0.8, ms=4)
+    nugget = 0
     model_results = [r + nugget for r in sp(sv[0])]
-    plot(sv[0], model_results, color='r', lw=0.8)
+    plot(sv[0], model_results/np.var(P[:, 2]), color='r', lw=0.8)
     xlim(0, hs.max())
     xlabel('Lag [m]', fontsize=4)
     ylabel('Semivariance', fontsize=4)
     title('average semi-variogram for {}'.format(name))
     tick_params(labelsize=4, length=2)
     grid( color='0.65')
-    savefig('semivariogram_figure/semivariogram_model_AVE {}.png'.format(name), fmt='png', dpi=200, bbox_inches='tight')
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model_AVE 3{}.png'
+            .format(name),
+            fmt='png',
+            dpi=400,
+            bbox_inches='tight')
     close()
 
 
@@ -209,11 +243,15 @@ date_range = [20130702,
               20150807,
               20150820,
               20150930,
-              20151002]
+              20151002
+              ]
 
 df_list = []
-table_name_list = ['vabeach_daily_tots_reformat']
+table_name_list = ['vabeach_reformat_mm']
+print 'getting data from database for: {}'.format(table_name_list[0])
 df = get_data_frame_from_table(table_name_list[0])
+df['datetime'] = pandas.to_datetime(df['datetime'])
+df = df.set_index('datetime')
 df_list.append(df)
 # df_list = [get_data_frame_from_table(table) in table_name_list]
 # combined_df = pandas.DataFrame(columns=['x','y','rain'])
@@ -221,12 +259,17 @@ df_list.append(df)
 #     combined_df = combined_df.append(df, ignore_index=True)
 # df_list.append({'df': combined_df, 'name': 'combined'})
 
-for df in df_list:
-    P = np.array(df[['x', 'y', 'rain']], dtype=np.float)
-    P = P[~np.isnan(P).any(axis=1)]
-    # bandwidth, plus or minus bw meters. Here we are using the 10th percentile
-    pd = squareform(pdist(P[:, :2]))
-    bw = np.percentile(pd[np.nonzero(pd)], 10)
-    # lags in bw meter increments from zero to the max distance
-    hs = np.arange(0, np.amax(pd), bw)
-    create_semivariogram(df, '', date_range, bw, hs)
+comb_df = pandas.DataFrame()
+for date in date_range:
+    print 'aggregating data for: {}'.format(str(date))
+    comb_df = comb_df.append(aggregate_time_steps(df, 24, date, wu=False))
+P = np.array(df[['x', 'y', 'precip_mm']], dtype=np.float)
+P = P[~np.isnan(P).any(axis=1)]
+# bandwidth, plus or minus bw meters. Here we are using the 10th percentile
+# pd = squareform(pdist(P[:, :2]))
+# bw = np.percentile(pd[np.nonzero(pd)], 10)
+bw = 3700
+# lags in bw meter increments from zero to the max distance
+
+hs = np.arange(0, 18000, bw)
+create_semivariogram(comb_df, 'vab', date_range, bw, hs)
