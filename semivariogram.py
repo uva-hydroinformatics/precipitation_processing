@@ -10,19 +10,6 @@ import pandas
 from scipy.spatial.distance import pdist, squareform
 import pyodbc
 
-
-def plot_stations(z):
-    fig, ax = subplots()
-    ax.scatter(z.x, z.y, c=z.rain, cmap='gray')
-    ax.set_aspect(1)
-    # xlim(-1500,22000)
-    # ylim(-1500,17500)
-    xlabel('Easting [m]')
-    ylabel('Northing [m]')
-    title('Rain (in)')
-    fig.savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfallgoogle.png')
-
-
 def SVh(P, h, bw):
     """
     Experimental semivariogram for a single lag
@@ -56,7 +43,7 @@ def C( P, h, bw ):
         return c0
     return c0 - SVh( P, h, bw )
 
-def opt(fct, x, y, C0, parameterRange=None, meshSize=1000):
+def opt(fct, x, y, C0, parameterRange=None, meshSize=1000): #TODO evaulate sensitivity of meshsize, see what a change in hs does
     if parameterRange == None:
         parameterRange = [x[1], x[-1]]
     mse = np.zeros(meshSize)
@@ -125,7 +112,7 @@ def get_data_frame_from_table(table_name):
     con.close()
     return df
 
-def aggregate_time_steps(df_date, hours, date, wu):
+def aggregate_time_steps(df, hours, date, wu):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
     date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
     df_date = df[date_string]
@@ -161,7 +148,6 @@ def create_semivariogram(df, name, date_range, bw, hs):
     i = 1
     for date in date_range:
         print 'creating semivariagram for {}'.format(str(date))
-        dfdates = df['datetime']
         df_for_date = df[df['datetime'] == datetime.datetime.strptime(str(date), "%Y%m%d")]
         if len(df_for_date) == 0:
             continue
@@ -169,13 +155,13 @@ def create_semivariogram(df, name, date_range, bw, hs):
         P = P[~np.isnan(P).any(axis=1)]
         sv = SV(P, hs, bw)
         #add sv to combined semivariogram
-        if i == 1:
-            ave_df = sv
+        if i == 1: #TODO does averaging over the events even make sense? aren't the events different?
+            ave_arr = sv
         else:
             for w in range(len(sv[0])):
-                for j in range(len(ave_df[0])):
-                    if sv[0][w] == ave_df[0][j]:
-                        ave_df[1][j] = (ave_df[1][j] + sv[1][w])*0.5
+                for j in range(len(ave_arr[0])):
+                    if sv[0][w] == ave_arr[0][j]:
+                        ave_arr[1][j] = (ave_arr[1][j] + sv[1][w]) * 0.5
         #create the model
         sp = cvmodel(P, spherical, hs, bw)
         #plot the data and the model
@@ -197,7 +183,7 @@ def create_semivariogram(df, name, date_range, bw, hs):
 
         i += 1
     tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model 3{}.png'
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model {}.png'
             .format(name),
             fmt='png',
             dpi=400,
@@ -205,8 +191,8 @@ def create_semivariogram(df, name, date_range, bw, hs):
     close()
 
     #plot the combined semivariogram
-    sp = cvmodel(P, spherical, hs, bw)
-    plot(ave_df[0], ave_df[1]/np.var(P[:, 2]), '.--', lw=0.8, ms=4)
+    sp = cvmodel(P, spherical, hs, bw) #TODO this is wrong! it's using the data from the last event (P)
+    plot(ave_arr[0], ave_arr[1] / np.var(P[:, 2]), '.--', lw=0.8, ms=4)
     nugget = 0
     model_results = [r + nugget for r in sp(sv[0])]
     plot(sv[0], model_results/np.var(P[:, 2]), color='r', lw=0.8)
@@ -216,7 +202,7 @@ def create_semivariogram(df, name, date_range, bw, hs):
     title('average semi-variogram for {}'.format(name))
     tick_params(labelsize=4, length=2)
     grid( color='0.65')
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model_AVE 3{}.png'
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model_AVE {}.png'
             .format(name),
             fmt='png',
             dpi=400,
@@ -252,7 +238,7 @@ print 'getting data from database for: {}'.format(table_name_list[0])
 df = get_data_frame_from_table(table_name_list[0])
 df['datetime'] = pandas.to_datetime(df['datetime'])
 df = df.set_index('datetime')
-df_list.append(df)
+# df_list.append(df)
 # df_list = [get_data_frame_from_table(table) in table_name_list]
 # combined_df = pandas.DataFrame(columns=['x','y','rain'])
 # for df in df_list:
@@ -263,13 +249,11 @@ comb_df = pandas.DataFrame()
 for date in date_range:
     print 'aggregating data for: {}'.format(str(date))
     comb_df = comb_df.append(aggregate_time_steps(df, 24, date, wu=False))
-P = np.array(df[['x', 'y', 'precip_mm']], dtype=np.float)
+P = np.array(comb_df[['x', 'y', 'precip_mm']], dtype=np.float)
 P = P[~np.isnan(P).any(axis=1)]
 # bandwidth, plus or minus bw meters. Here we are using the 10th percentile
-# pd = squareform(pdist(P[:, :2]))
-# bw = np.percentile(pd[np.nonzero(pd)], 10)
-bw = 3700
+pd = squareform(pdist(P[:, :2]))
+bw = np.percentile(pd[np.nonzero(pd)], 10)
 # lags in bw meter increments from zero to the max distance
-
-hs = np.arange(0, 18000, bw)
-create_semivariogram(comb_df, 'vab', date_range, bw, hs)
+hs = np.arange(0, np.max(pd), bw)
+create_semivariogram(comb_df, 'vab_1k', date_range, bw, hs)
