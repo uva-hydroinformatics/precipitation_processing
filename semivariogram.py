@@ -95,7 +95,7 @@ def cvmodel(P, model, hs, bw):
 
 
 def get_data_frame_from_table(table_name):
-
+    print 'getting data for {}'.format(table_name)
     # set up db connection
     MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb"; DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
 
@@ -112,6 +112,30 @@ def get_data_frame_from_table(table_name):
     con.close()
     return df
 
+
+def make_incremental(df, date_range):
+    newdf = pandas.DataFrame()
+    for date in date_range:
+        date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
+        df_date = df[date_string]
+        df_date = df_date.groupby(['x', 'y'])
+        for group in df_date:
+            xy_df = group[1]
+            cum_precip_arr = np.array(xy_df['precip_mm'])
+            if cum_precip_arr[0]>0:
+                incr_precip = [cum_precip_arr[0]] #TODO: decide whether or not to keep this or make it zero to begin with
+            else:
+                incr_precip = [0]
+            for i in range(len(cum_precip_arr)-1):
+                if cum_precip_arr[i+1] >= cum_precip_arr[i]:
+                    incr_precip.append(cum_precip_arr[i+1] - cum_precip_arr[i])
+                else:
+                    incr_precip.append(cum_precip_arr[i+1])
+            xy_df.loc[:, 'precip_mm'] = incr_precip
+            newdf = newdf.append(xy_df)
+    return newdf
+
+
 def aggregate_time_steps(df, hours, date, wu):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
     date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
@@ -119,6 +143,7 @@ def aggregate_time_steps(df, hours, date, wu):
     df_date = df_date.groupby(['x', 'y'])
     df_date = df_date.resample('D', how={'precip_mm': 'sum'})
     df_date = df_date.reset_index(inplace=False)
+    # this poriton of the code changes cumulative values to incremental
     if wu == True:
         newdf = pandas.DataFrame()
         for group in df_date:
@@ -151,8 +176,7 @@ def create_semivariogram(df, name, date_range, bw, hs):
         df_for_date = df[df['datetime'] == datetime.datetime.strptime(str(date), "%Y%m%d")]
         if len(df_for_date) == 0:
             continue
-        P = np.array(df_for_date[['x', 'y', 'precip_mm']], dtype=float)
-        P = P[~np.isnan(P).any(axis=1)]
+        P = create_array(df_for_date)
         sv = SV(P, hs, bw)
         #add sv to combined semivariogram
         if i == 1: #TODO does averaging over the events even make sense? aren't the events different?
@@ -210,6 +234,68 @@ def create_semivariogram(df, name, date_range, bw, hs):
     close()
 
 
+def create_array(df):
+        P = np.array(df[['x', 'y', 'precip_mm']], dtype=float)
+        P = P[~np.isnan(P).any(axis=1)]
+        return P
+
+
+def krige(P, model, hs, bw, u, N):
+    '''
+    Input  (P)     ndarray, data
+           (model) modeling function
+                    - spherical
+                    - exponential
+                    - gaussian
+           (hs)    kriging distances
+           (bw)    kriging bandwidth
+           (u)     unsampled point
+           (N)     number of neighboring
+                   points to consider
+    '''
+
+    # covariance function
+    covfct = cvmodel( P, model, hs, bw )
+    # mean of the variable
+    mu = np.mean( P[:,2] )
+
+    # distance between u and each data point in P
+    d = np.sqrt( ( P[:,0]-u[0] )**2.0 + ( P[:,1]-u[1] )**2.0 )
+    # add these distances to P
+    P = np.vstack(( P.T, d )).T
+    # sort P by these distances
+    # take the first N of them
+    P = P[d.argsort()[:N]]
+
+    # apply the covariance model to the distances
+    k = covfct( P[:,3] )
+    # cast as a matrix
+    k = np.matrix( k ).T
+
+    # form a matrix of distances between existing data points
+    K = squareform( pdist( P[:,:2] ) )
+    # apply the covariance model to these distances
+    K = covfct( K.ravel() )
+    # re-cast as a NumPy array -- thanks M.L.
+    K = np.array( K )
+    # reshape into an array
+    K = K.reshape(N,N)
+    # cast as a matrix
+    K = np.matrix( K )
+
+    # calculate the kriging weights
+    weights = np.linalg.inv( K ) * k
+    weights = np.array( weights )
+
+    # calculate the residuals
+    residuals = P[:,2] - mu
+
+    # calculate the estimation
+    estimation = np.dot( weights.T, residuals ) + mu
+
+    return float( estimation )
+
+
 date_range = [20130702,
               20131009,
               20140111,
@@ -231,29 +317,65 @@ date_range = [20130702,
               20150930,
               20151002
               ]
-
 df_list = []
-table_name_list = ['vabeach_reformat_mm']
-print 'getting data from database for: {}'.format(table_name_list[0])
-df = get_data_frame_from_table(table_name_list[0])
+df = get_data_frame_from_table('vabeach_reformat_mm')
 df['datetime'] = pandas.to_datetime(df['datetime'])
 df = df.set_index('datetime')
-# df_list.append(df)
-# df_list = [get_data_frame_from_table(table) in table_name_list]
-# combined_df = pandas.DataFrame(columns=['x','y','rain'])
-# for df in df_list:
-#     combined_df = combined_df.append(df, ignore_index=True)
-# df_list.append({'df': combined_df, 'name': 'combined'})
+df_list.append(df)
 
-comb_df = pandas.DataFrame()
+# df = get_data_frame_from_table('wu_observation_spatial')
+# df['datetime'] = pandas.to_datetime(df['datetime'])
+# df = df.set_index('datetime')
+# inc_df = make_incremental(df, date_range)
+# df_list.append(inc_df)
+
+
+combined_df = pandas.DataFrame()
+for df in df_list:
+    combined_df = combined_df.append(df)
+
+z = open('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_example/ZoneA.dat', 'r').readlines()
+z = [ i.strip().split() for i in z[10:] ]
+z = np.array(z, dtype=np.float)
+z = pandas.DataFrame( z, columns=['x','y','thk','por','perm','lperm','lpermp','lpermr'] )
+
+
+agg_df = pandas.DataFrame()
 for date in date_range:
     print 'aggregating data for: {}'.format(str(date))
-    comb_df = comb_df.append(aggregate_time_steps(df, 24, date, wu=False))
-P = np.array(comb_df[['x', 'y', 'precip_mm']], dtype=np.float)
-P = P[~np.isnan(P).any(axis=1)]
+    #get an aggregated df for an individual time step
+    indivi_df = aggregate_time_steps(combined_df, 24, date, wu=False)
+
+    #create an array and do the kriging
+    P = create_array(indivi_df)
+    pd = squareform(pdist(P[:, :2]))
+    bw = np.percentile(pd[np.nonzero(pd)], 10)
+    hs = np.arange(0, np.max(pd), bw)
+    marg = 500
+    X0, X1 = P[:, 0].min(), P[:, 0].max()
+    Y0, Y1 = P[:, 1].min(), P[:, 1].max()
+    x_step = 25
+    y_step = 25
+    Z = np.zeros((y_step, x_step))
+    dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
+    for i in range(y_step):
+        print i,
+        for j in range(x_step):
+            Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dy*j, indivi_df.y.min()+dx*i), 5)
+    scale = 1000
+    scatter(indivi_df.x/scale, indivi_df.y/scale, facecolor='none', linewidths=0.75, s=50)
+    imshow(Z, interpolation='nearest', extent=[indivi_df.x.min()/scale ,indivi_df.x.max()/scale,indivi_df.y.min()/scale,indivi_df.y.max()/scale])
+    set_cmap("Blues")
+    colorbar()
+    xlim((indivi_df.x.min()-marg)/scale, (indivi_df.x.max()+marg)/scale); ylim((indivi_df.y.min()-marg)/scale, (indivi_df.y.max()+marg)/scale)
+    savefig('krigingpurple_vab.png', fmt='png', dpi=200)
+
+    #add to combined df to make the semivariograms
+    agg_df = agg_df.append(indivi_df)
+P = create_array(agg_df)
 # bandwidth, plus or minus bw meters. Here we are using the 10th percentile
 pd = squareform(pdist(P[:, :2]))
 bw = np.percentile(pd[np.nonzero(pd)], 10)
 # lags in bw meter increments from zero to the max distance
 hs = np.arange(0, np.max(pd), bw)
-create_semivariogram(comb_df, 'vab_1k', date_range, bw, hs)
+create_semivariogram(agg_df, 'vab_1k', date_range, bw, hs)
