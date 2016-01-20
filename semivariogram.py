@@ -220,63 +220,40 @@ def create_array(df):
         return P
 
 
-def create_interpolations(df, inter_file_name, date_range):
-    a = 1
-    for date in date_range:
-        print 'creating interpolation for {}'.format(str(date))
-        #get an aggregated df for an individual time step
-        indivi_df = aggregate_time_steps(df, 24, date, wu=False)
+def create_interpolations(P, x_step, y_step, num_neigbors):
+    X0, X1 = P[:, 0].min(), P[:, 0].max()
+    Y0, Y1 = P[:, 1].min(), P[:, 1].max()
+    Z = np.zeros((y_step, x_step))
+    dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
+    for i in range(y_step):
+        print i,
+        for j in range(x_step):
+            Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dx*j, indivi_df.y.min()+dy*i), num_neigbors)
+    return Z
 
-        #create array for sv and kriging
-        P = create_array(indivi_df)
-        pd = squareform(pdist(P[:, :2]))
-        bw = np.percentile(pd[np.nonzero(pd)], 10)
-        hs = np.arange(0, np.max(pd), bw)
-
-        #create an array and do the kriging
-        X0, X1 = P[:, 0].min(), P[:, 0].max()
-        Y0, Y1 = P[:, 1].min(), P[:, 1].max()
-        x_step = 5
-        y_step = 5
-
-        marg = 500
-        scale = 1000
-        x_list_scaled = [i / scale for i in P[:, 0].tolist()]
-        y_list_scaled = [i / scale for i in P[:, 1].tolist()]
-        z_list = P[:, 2]
-
-        Z = np.zeros((y_step, x_step))
-        dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
-        for i in range(y_step):
-            print i,
-            for j in range(x_step):
-                Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dx*j, indivi_df.y.min()+dy*i), 8)
-        Z = np.flipud(Z)
-        font_size = 4
-        subplot(4,3,a)
-        scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=20, cmap=get_cmap('Oranges'))
-        for i in range(len(z_list)):
-            labs = annotate(z_list[i], (x_list_scaled[i],
-                                 y_list_scaled[i]),
-                                 fontsize=font_size,
-                                 weight='bold',
-                                 # xytext=(1, 1) TODO figure out how do offset labels
-                     )
-        imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
-        set_cmap("Blues")
-        tick_params(labelsize=font_size)
-        cbar = colorbar(shrink=0.9)
-        cbar.ax.tick_params(labelsize=font_size)
-        xlim((indivi_df.x.min() - marg)/1000, (indivi_df.x.max() + marg)/1000); ylim((indivi_df.y.min() - marg)/1000, (indivi_df.y.max() + marg)/1000)
-        # tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-        title('{}'.format(date), fontsize=4, fontdict={'verticalalignment':'bottom'})
-        a += 1
-    tight_layout(pad=0.1, w_pad=0.01, h_pad=0.05)
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/kriging/{}.png'
-            .format(inter_file_name),
-            fmt='png',
-            dpi=800)
-    close()
+def plot_interpolation(x_list, y_list, z_list, Z, font_size, plot_limits):
+    marg = 500
+    scale = 1000
+    x_list_scaled = [i / scale for i in x_list]
+    y_list_scaled = [i / scale for i in y_list]
+    scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=20, cmap=get_cmap('Oranges'))
+    for i in range(len(z_list)):
+        labs = annotate(z_list[i], (x_list_scaled[i],
+                             y_list_scaled[i]),
+                             fontsize=font_size,
+                             weight='bold',
+                             # xytext=(1, 1) TODO figure out how do offset labels
+                 )
+    Z = np.flipud(Z)
+    imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
+    set_cmap("Blues")
+    tick_params(labelsize=font_size)
+    cbar = colorbar(shrink=0.9)
+    cbar.ax.tick_params(labelsize=font_size)
+    xlim((plot_limits['xmin'] - marg)/scale, ((plot_limits['xmax'] + marg)/scale))
+    ylim((plot_limits['ymin'] - marg)/scale, ((plot_limits['ymax'] + marg)/scale))
+    # tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
+    title('{}'.format(date), fontsize=4, fontdict={'verticalalignment':'bottom'})
 
 
 def krige(P, model, hs, bw, u, N):
@@ -364,7 +341,7 @@ date_range = [
 df_list = []
 df = get_data_frame_from_table('vabeach_reformat_mm')
 df['datetime'] = pandas.to_datetime(df['datetime'])
-df = df.set_index('datetime')
+df_vab = df.set_index('datetime')
 df_list.append(df)
 
 df = get_data_frame_from_table('wu_observation_spatial')
@@ -372,12 +349,40 @@ df['datetime'] = pandas.to_datetime(df['datetime'])
 df = df.set_index('datetime')
 inc_df = make_incremental(df, date_range)
 df_list.append(inc_df)
+df_wu = inc_df
 
 #combine the dfs in the list together
 combined_df = pandas.DataFrame()
 for df in df_list:
     combined_df = combined_df.append(df)
 
-# create_interpolations(combined_df, "testing again", date_range[:12])
 create_semivariograms(combined_df, "testing again", date_range)
+
+a = 1
+for date in date_range[:1]:
+    print 'creating interpolation for {}'.format(str(date))
+    indivi_df = aggregate_time_steps(combined_df, 24, date, wu=False)
+    P = create_array(indivi_df)
+    pd = squareform(pdist(P[:, :2]))
+    bw = np.percentile(pd[np.nonzero(pd)], 10)
+    hs = np.arange(0, np.max(pd), bw)
+    Z = create_interpolations(P, x_step=50, y_step=50, num_neigbors=8)
+    subplot(4,3,a)
+    plot_limits = {
+        'xmin': indivi_df.x.min(),
+        'xmax': indivi_df.x.max(),
+        'ymin': indivi_df.y.min(),
+        'ymax': indivi_df.y.max()
+    }
+    plot_interpolation(P[:, 0].tolist(), P[:, 1].tolist(), P[:, 2].tolist(), Z, font_size=4, plot_limits=plot_limits)
+    tight_layout(pad=0.1, w_pad=0.01, h_pad=0.05)
+    a += 1
+inter_file_name = "testing again vab"
+savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/kriging/{}.png'
+        .format(inter_file_name),
+        fmt='png',
+        dpi=800)
+close()
+
+
 
