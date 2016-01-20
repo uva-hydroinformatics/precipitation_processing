@@ -11,6 +11,7 @@ from scipy.spatial.distance import pdist, squareform
 import pyodbc
 import matplotlib.patheffects as pe
 
+
 def SVh(P, h, bw):
     """
     Experimental semivariogram for a single lag
@@ -35,6 +36,7 @@ def SV(P, hs, bw):
     sv = [[hs[i], sv[i]] for i in range(len(hs)) if sv[i] > 0]
     return np.array(sv).T
 
+
 def C( P, h, bw ):
     """
     Calculate the sill
@@ -43,6 +45,7 @@ def C( P, h, bw ):
     if h == 0:
         return c0
     return c0 - SVh( P, h, bw )
+
 
 def opt(fct, x, y, C0, parameterRange=None, meshSize=1000): #TODO evaulate sensitivity of meshsize, see what a change in hs does
     if parameterRange == None:
@@ -170,76 +173,110 @@ def aggregate_time_steps(df, hours, date, wu):
         return df_date
 
 
-def create_semivariograms(df, name, date_range, bw, hs):
-    print 'doing data for {}'.format(name)
+def create_semivariograms(df, semivar_name, date_range):
     i = 1
     for date in date_range:
-        print 'creating semivariagram for {}'.format(str(date))
-        df_for_date = df[df['datetime'] == datetime.datetime.strptime(str(date), "%Y%m%d")]
-        if len(df_for_date) == 0:
-            continue
-        P = create_array(df_for_date)
-        sv = SV(P, hs, bw)
-        #add sv to combined semivariogram
-        if i == 1: #TODO does averaging over the events even make sense? aren't the events different?
-            ave_arr = sv
-        else:
-            for w in range(len(sv[0])):
-                for j in range(len(ave_arr[0])):
-                    if sv[0][w] == ave_arr[0][j]:
-                        ave_arr[1][j] = (ave_arr[1][j] + sv[1][w]) * 0.5
-        #create the model
-        sp = cvmodel(P, spherical, hs, bw)
-        #plot the data and the model
+        print "creating sv for {}".format(str(date))
+        indivi_df = aggregate_time_steps(df, 24, date, wu=False)
+
+        #create array for sv and kriging
+        P = create_array(indivi_df)
+        pd = squareform(pdist(P[:, :2]))
+        bw = np.percentile(pd[np.nonzero(pd)], 10)
+        hs = np.arange(0, np.max(pd), bw)
+        sv_results = SV(P, hs, bw)
+        model = cvmodel(P, spherical, hs, bw)
         subplot(10, 2, i)
-        plot(sv[0], sv[1]/np.var(P[:, 2]), '.--', lw=0.8, ms=4)
-        nugget = sv[1][0]
-        model_results = [r + nugget for r in sp(sv[0])]
-        plot(sv[0], model_results/np.var(P[:, 2]), color='r', lw=0.8)
-        xlim(0, hs.max())
-        # ylim(-1500,17500)
-        # figure(figsize=(7, 4))
+        plot_semivariogram(sv_results[0], sv_results[1], model(sv_results[0]), str(date), hs.max(), np.var(P[:, 2]))
         if i == 19 or i == 20:
             xlabel('Lag [m]', fontsize=4)
         if i % 2 == 1:
             ylabel('Semivariance', fontsize=4)
         title((datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%m/%d/%y')), fontsize=5)
         tick_params(labelsize=4, length=2)
-        grid( color='0.65')
+        grid(color='0.65')
 
         i += 1
     tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model {}.png'
-            .format(name),
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/{}.png'
+            .format(semivar_name),
             fmt='png',
             dpi=400,
             bbox_inches='tight')
-    close()
 
-    #plot the combined semivariogram
-    sp = cvmodel(P, spherical, hs, bw) #TODO this is wrong! it's using the data from the last event (P)
-    plot(ave_arr[0], ave_arr[1] / np.var(P[:, 2]), '.--', lw=0.8, ms=4)
-    nugget = 0
-    model_results = [r + nugget for r in sp(sv[0])]
-    plot(sv[0], model_results/np.var(P[:, 2]), color='r', lw=0.8)
-    xlim(0, hs.max())
-    xlabel('Lag [m]', fontsize=4)
-    ylabel('Semivariance', fontsize=4)
-    title('average semi-variogram for {}'.format(name))
-    tick_params(labelsize=4, length=2)
-    grid( color='0.65')
-    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_figure/semivariogram_model_AVE {}.png'
-            .format(name),
-            fmt='png',
-            dpi=400,
-            bbox_inches='tight')
-    close()
+
+def plot_semivariogram(x, y, model_results, title_text, xmax, var):
+    plot(x, y/var, '.--', lw=0.8, ms=4)
+    nugget = y[0]
+    model_results = [(r + nugget)/var for r in model_results]
+    plot(x, model_results, color='r', lw=0.8)
+    xlim(0, xmax)
+    title('average semi-variogram for {}'.format(title_text))
 
 
 def create_array(df):
         P = np.array(df[['x', 'y', 'precip_mm']], dtype=float)
         P = P[~np.isnan(P).any(axis=1)]
         return P
+
+
+def create_interpolations(df, inter_file_name, date_range):
+    a = 1
+    for date in date_range:
+        print 'creating interpolation for {}'.format(str(date))
+        #get an aggregated df for an individual time step
+        indivi_df = aggregate_time_steps(df, 24, date, wu=False)
+
+        #create array for sv and kriging
+        P = create_array(indivi_df)
+        pd = squareform(pdist(P[:, :2]))
+        bw = np.percentile(pd[np.nonzero(pd)], 10)
+        hs = np.arange(0, np.max(pd), bw)
+
+        #create an array and do the kriging
+        X0, X1 = P[:, 0].min(), P[:, 0].max()
+        Y0, Y1 = P[:, 1].min(), P[:, 1].max()
+        x_step = 5
+        y_step = 5
+
+        marg = 500
+        scale = 1000
+        x_list_scaled = [i / scale for i in P[:, 0].tolist()]
+        y_list_scaled = [i / scale for i in P[:, 1].tolist()]
+        z_list = P[:, 2]
+
+        Z = np.zeros((y_step, x_step))
+        dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
+        for i in range(y_step):
+            print i,
+            for j in range(x_step):
+                Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dx*j, indivi_df.y.min()+dy*i), 8)
+        Z = np.flipud(Z)
+        font_size = 4
+        subplot(4,3,a)
+        scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=20, cmap=get_cmap('Oranges'))
+        for i in range(len(z_list)):
+            labs = annotate(z_list[i], (x_list_scaled[i],
+                                 y_list_scaled[i]),
+                                 fontsize=font_size,
+                                 weight='bold',
+                                 # xytext=(1, 1) TODO figure out how do offset labels
+                     )
+        imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
+        set_cmap("Blues")
+        tick_params(labelsize=font_size)
+        cbar = colorbar(shrink=0.9)
+        cbar.ax.tick_params(labelsize=font_size)
+        xlim((indivi_df.x.min() - marg)/1000, (indivi_df.x.max() + marg)/1000); ylim((indivi_df.y.min() - marg)/1000, (indivi_df.y.max() + marg)/1000)
+        # tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
+        title('{}'.format(date), fontsize=4, fontdict={'verticalalignment':'bottom'})
+        a += 1
+    tight_layout(pad=0.1, w_pad=0.01, h_pad=0.05)
+    savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/kriging/{}.png'
+            .format(inter_file_name),
+            fmt='png',
+            dpi=800)
+    close()
 
 
 def krige(P, model, hs, bw, u, N):
@@ -298,6 +335,8 @@ def krige(P, model, hs, bw, u, N):
     return float( estimation )
 
 
+
+
 date_range = [
               20130702,
               20131009,
@@ -321,6 +360,7 @@ date_range = [
               20151002
               ]
 
+# prepare the data by pulling from the database and making the datetime the index
 df_list = []
 df = get_data_frame_from_table('vabeach_reformat_mm')
 df['datetime'] = pandas.to_datetime(df['datetime'])
@@ -333,117 +373,11 @@ df = df.set_index('datetime')
 inc_df = make_incremental(df, date_range)
 df_list.append(inc_df)
 
-
+#combine the dfs in the list together
 combined_df = pandas.DataFrame()
 for df in df_list:
     combined_df = combined_df.append(df)
 
+# create_interpolations(combined_df, "testing again", date_range[:12])
+create_semivariograms(combined_df, "testing again", date_range)
 
-agg_df = pandas.DataFrame()
-a = 1
-for date in date_range:
-    print 'aggregating data for: {}'.format(str(date))
-    #get an aggregated df for an individual time step
-    indivi_df = aggregate_time_steps(combined_df, 24, date, wu=False)
-
-    #create an array and do the kriging
-    P = create_array(indivi_df)
-    pd = squareform(pdist(P[:, :2]))
-    bw = np.percentile(pd[np.nonzero(pd)], 10)
-    hs = np.arange(0, np.max(pd), bw)
-    X0, X1 = P[:, 0].min(), P[:, 0].max()
-    Y0, Y1 = P[:, 1].min(), P[:, 1].max()
-    x_step = 50
-    y_step = 50
-
-    marg = 500
-    scale = 1000
-    x_list_scaled = [i / scale for i in P[:, 0].tolist()]
-    y_list_scaled = [i / scale for i in P[:, 1].tolist()]
-    z_list = P[:, 2]
-
-    Z = np.zeros((y_step, x_step))
-    dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
-    u_list = list()
-    for i in range(y_step):
-        print i,
-        for j in range(x_step):
-            Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dx*j, indivi_df.y.min()+dy*i), 8)
-    Z = np.flipud(Z)
-    u = np.array(u_list)
-    font_size = 4
-    subplot(4,3,a)
-    scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=35, cmap=get_cmap('Oranges'))
-    for i in range(len(z_list)):
-        labs = annotate(z_list[i], (x_list_scaled[i],
-                             y_list_scaled[i]),
-                             fontsize=font_size,
-                             weight='bold',
-                             # xytext=(1, 1) TODO figure out how do offset labels
-                 )
-    imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
-    set_cmap("Blues")
-    tick_params(labelsize=font_size)
-    cbar = colorbar(shrink=0.9)
-    cbar.ax.tick_params(labelsize=font_size)
-    xlim((indivi_df.x.min() - marg)/1000, (indivi_df.x.max() + marg)/1000); ylim((indivi_df.y.min() - marg)/1000, (indivi_df.y.max() + marg)/1000)
-    # tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-    title('{}'.format(date), fontsize=4, fontdict={'verticalalignment':'bottom'})
-    a += 1
-
-    # add to combined df to make the semivariograms
-    agg_df = agg_df.append(indivi_df)
-
-tight_layout(pad=0.1, w_pad=0.01, h_pad=0.05)
-savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/kriging/kriging_vab_1.png', fmt='png', dpi=800)
-close()
-P = create_array(agg_df)
-# bandwidth, plus or minus bw meters. Here we are using the 10th percentile
-pd = squareform(pdist(P[:, :2]))
-bw = np.percentile(pd[np.nonzero(pd)], 10)
-# lags in bw meter increments from zero to the max distance
-hs = np.arange(0, np.max(pd), bw)
-create_semivariograms(agg_df, 'vab_1k', date_range, bw, hs)
-
-
-sum_df = combined_df.groupby(['x', 'y'])
-sum_df = sum_df.sum()
-sum_df = sum_df.reset_index(inplace=False)
-P = create_array(sum_df)
-pd = squareform(pdist(P[:, :2]))
-bw = np.percentile(pd[np.nonzero(pd)], 10)
-hs = np.arange(0, np.max(pd), bw)
-
-X0, X1 = P[:, 0].min(), P[:, 0].max()
-Y0, Y1 = P[:, 1].min(), P[:, 1].max()
-x_step = 20
-y_step = 20
-
-marg = .5
-scale = 1000
-x_list_scaled = [i / scale for i in P[:, 0].tolist()]
-y_list_scaled = [i / scale for i in P[:, 1].tolist()]
-z_list = P[:, 2]
-
-Z = np.zeros((y_step, x_step))
-dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
-u_list = list()
-for i in range(y_step):
-    print i,
-    for j in range(x_step):
-        Z[i, j] = krige(P, spherical, hs, bw, (sum_df.x.min()+dx*j, sum_df.y.min()+dy*i), 8)
-Z = np.flipud(Z)
-u = np.array(u_list)
-font_size = 10
-scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=50, cmap=get_cmap('Oranges'))
-for i in range(len(z_list)):
-    annotate(z_list[i], (x_list_scaled[i], y_list_scaled[i]), fontsize=font_size)
-imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
-set_cmap("Blues")
-tick_params(labelsize=font_size)
-cbar = colorbar(shrink=0.9)
-cbar.ax.tick_params(labelsize=font_size)
-xlim(min(x_list_scaled) - marg, max(x_list_scaled) + marg); ylim(min(y_list_scaled) - marg, max(y_list_scaled) + marg)
-title('Sum', fontsize=font_size, fontdict={'verticalalignment':'bottom'})
-tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
-savefig('kriging_comb_sum.png', fmt='png', dpi=800)
