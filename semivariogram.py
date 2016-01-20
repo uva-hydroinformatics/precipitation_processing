@@ -9,6 +9,7 @@ import numpy as np
 import pandas
 from scipy.spatial.distance import pdist, squareform
 import pyodbc
+import matplotlib.patheffects as pe
 
 def SVh(P, h, bw):
     """
@@ -118,6 +119,7 @@ def make_incremental(df, date_range):
     for date in date_range:
         date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
         df_date = df[date_string]
+        us = len(df_date['site_name'].unique())
         df_date = df_date.groupby(['x', 'y'])
         for group in df_date:
             xy_df = group[1]
@@ -168,7 +170,7 @@ def aggregate_time_steps(df, hours, date, wu):
         return df_date
 
 
-def create_semivariogram(df, name, date_range, bw, hs):
+def create_semivariograms(df, name, date_range, bw, hs):
     print 'doing data for {}'.format(name)
     i = 1
     for date in date_range:
@@ -296,7 +298,8 @@ def krige(P, model, hs, bw, u, N):
     return float( estimation )
 
 
-date_range = [20130702,
+date_range = [
+              20130702,
               20131009,
               20140111,
               20140213,
@@ -317,30 +320,27 @@ date_range = [20130702,
               20150930,
               20151002
               ]
+
 df_list = []
 df = get_data_frame_from_table('vabeach_reformat_mm')
 df['datetime'] = pandas.to_datetime(df['datetime'])
 df = df.set_index('datetime')
 df_list.append(df)
 
-# df = get_data_frame_from_table('wu_observation_spatial')
-# df['datetime'] = pandas.to_datetime(df['datetime'])
-# df = df.set_index('datetime')
-# inc_df = make_incremental(df, date_range)
-# df_list.append(inc_df)
+df = get_data_frame_from_table('wu_observation_spatial')
+df['datetime'] = pandas.to_datetime(df['datetime'])
+df = df.set_index('datetime')
+inc_df = make_incremental(df, date_range)
+df_list.append(inc_df)
 
 
 combined_df = pandas.DataFrame()
 for df in df_list:
     combined_df = combined_df.append(df)
 
-z = open('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/semivariogram_example/ZoneA.dat', 'r').readlines()
-z = [ i.strip().split() for i in z[10:] ]
-z = np.array(z, dtype=np.float)
-z = pandas.DataFrame( z, columns=['x','y','thk','por','perm','lperm','lpermp','lpermr'] )
-
 
 agg_df = pandas.DataFrame()
+a = 1
 for date in date_range:
     print 'aggregating data for: {}'.format(str(date))
     #get an aggregated df for an individual time step
@@ -351,31 +351,99 @@ for date in date_range:
     pd = squareform(pdist(P[:, :2]))
     bw = np.percentile(pd[np.nonzero(pd)], 10)
     hs = np.arange(0, np.max(pd), bw)
-    marg = 500
     X0, X1 = P[:, 0].min(), P[:, 0].max()
     Y0, Y1 = P[:, 1].min(), P[:, 1].max()
-    x_step = 25
-    y_step = 25
+    x_step = 50
+    y_step = 50
+
+    marg = 500
+    scale = 1000
+    x_list_scaled = [i / scale for i in P[:, 0].tolist()]
+    y_list_scaled = [i / scale for i in P[:, 1].tolist()]
+    z_list = P[:, 2]
+
     Z = np.zeros((y_step, x_step))
     dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
+    u_list = list()
     for i in range(y_step):
         print i,
         for j in range(x_step):
-            Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dy*j, indivi_df.y.min()+dx*i), 5)
-    scale = 1000
-    scatter(indivi_df.x/scale, indivi_df.y/scale, facecolor='none', linewidths=0.75, s=50)
-    imshow(Z, interpolation='nearest', extent=[indivi_df.x.min()/scale ,indivi_df.x.max()/scale,indivi_df.y.min()/scale,indivi_df.y.max()/scale])
+            Z[i, j] = krige(P, spherical, hs, bw, (indivi_df.x.min()+dx*j, indivi_df.y.min()+dy*i), 8)
+    Z = np.flipud(Z)
+    u = np.array(u_list)
+    font_size = 4
+    subplot(4,3,a)
+    scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=35, cmap=get_cmap('Oranges'))
+    for i in range(len(z_list)):
+        labs = annotate(z_list[i], (x_list_scaled[i],
+                             y_list_scaled[i]),
+                             fontsize=font_size,
+                             weight='bold',
+                             # xytext=(1, 1) TODO figure out how do offset labels
+                 )
+    imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
     set_cmap("Blues")
-    colorbar()
-    xlim((indivi_df.x.min()-marg)/scale, (indivi_df.x.max()+marg)/scale); ylim((indivi_df.y.min()-marg)/scale, (indivi_df.y.max()+marg)/scale)
-    savefig('krigingpurple_vab.png', fmt='png', dpi=200)
+    tick_params(labelsize=font_size)
+    cbar = colorbar(shrink=0.9)
+    cbar.ax.tick_params(labelsize=font_size)
+    xlim((indivi_df.x.min() - marg)/1000, (indivi_df.x.max() + marg)/1000); ylim((indivi_df.y.min() - marg)/1000, (indivi_df.y.max() + marg)/1000)
+    # tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
+    title('{}'.format(date), fontsize=4, fontdict={'verticalalignment':'bottom'})
+    a += 1
 
-    #add to combined df to make the semivariograms
+    # add to combined df to make the semivariograms
     agg_df = agg_df.append(indivi_df)
+
+tight_layout(pad=0.1, w_pad=0.01, h_pad=0.05)
+savefig('C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/kriging/kriging_vab_1.png', fmt='png', dpi=800)
+close()
 P = create_array(agg_df)
 # bandwidth, plus or minus bw meters. Here we are using the 10th percentile
 pd = squareform(pdist(P[:, :2]))
 bw = np.percentile(pd[np.nonzero(pd)], 10)
 # lags in bw meter increments from zero to the max distance
 hs = np.arange(0, np.max(pd), bw)
-create_semivariogram(agg_df, 'vab_1k', date_range, bw, hs)
+create_semivariograms(agg_df, 'vab_1k', date_range, bw, hs)
+
+
+sum_df = combined_df.groupby(['x', 'y'])
+sum_df = sum_df.sum()
+sum_df = sum_df.reset_index(inplace=False)
+P = create_array(sum_df)
+pd = squareform(pdist(P[:, :2]))
+bw = np.percentile(pd[np.nonzero(pd)], 10)
+hs = np.arange(0, np.max(pd), bw)
+
+X0, X1 = P[:, 0].min(), P[:, 0].max()
+Y0, Y1 = P[:, 1].min(), P[:, 1].max()
+x_step = 20
+y_step = 20
+
+marg = .5
+scale = 1000
+x_list_scaled = [i / scale for i in P[:, 0].tolist()]
+y_list_scaled = [i / scale for i in P[:, 1].tolist()]
+z_list = P[:, 2]
+
+Z = np.zeros((y_step, x_step))
+dx, dy = (X1-X0)/x_step, (Y1-Y0)/y_step
+u_list = list()
+for i in range(y_step):
+    print i,
+    for j in range(x_step):
+        Z[i, j] = krige(P, spherical, hs, bw, (sum_df.x.min()+dx*j, sum_df.y.min()+dy*i), 8)
+Z = np.flipud(Z)
+u = np.array(u_list)
+font_size = 10
+scatter(x_list_scaled, y_list_scaled, c=z_list, linewidths=0.75, s=50, cmap=get_cmap('Oranges'))
+for i in range(len(z_list)):
+    annotate(z_list[i], (x_list_scaled[i], y_list_scaled[i]), fontsize=font_size)
+imshow(Z, interpolation='nearest', extent=[min(x_list_scaled), max(x_list_scaled), min(y_list_scaled), max(y_list_scaled)])
+set_cmap("Blues")
+tick_params(labelsize=font_size)
+cbar = colorbar(shrink=0.9)
+cbar.ax.tick_params(labelsize=font_size)
+xlim(min(x_list_scaled) - marg, max(x_list_scaled) + marg); ylim(min(y_list_scaled) - marg, max(y_list_scaled) + marg)
+title('Sum', fontsize=font_size, fontdict={'verticalalignment':'bottom'})
+tight_layout(pad=0.1, w_pad=0.1, h_pad=0.05)
+savefig('kriging_comb_sum.png', fmt='png', dpi=800)
