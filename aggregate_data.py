@@ -5,6 +5,7 @@
 import numpy as np
 import pandas
 import pyodbc
+import datetime
 
 
 def get_data_frame_from_table(table_name):
