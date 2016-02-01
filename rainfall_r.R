@@ -7,21 +7,45 @@ rain.csv <- read.csv(file="C:\\Users\\jeff_dsktp\\Documents\\precipitation_proce
 rain.db <- db.create(rain.csv,ndim=2,autoname=F,flag.grid=F)
 
 #set precip to the z variable
-rain.db <- db.locate(rain.db, "datetime")
+rain.db <- db.locate(rain.db, "sitename")
 rain.db <- db.locate(rain.db, "precip_mm","z")
 
 #create neighbor objects for interpolation
 unique.neigh <- neigh.init(ndim = 2, type = 0)
 moving.neigh <- neigh.init(ndim = 2, type = 2, nmini = 1, nmaxi = 8, nsect = 8, nsmax = 2, flag.sector=TRUE, dmax = 10000)
 
+outliers <- c()
 
 for(i in 1:20)
 {
-    #reset selection then select portion of data
+    #reset selection 
     rain.db <- db.sel(rain.db)
+    
+    #select only data for given date
     rain.db <- db.sel(rain.db,datetime==dates[i])
+    #change which sources you would like to consider
     type <- "wu_vab"
     rain.db <- db.sel(rain.db,src=="wu" | src=="vab", combine="and")
+    
+    #plot boxplots 
+    filename <- paste(dates[i], "boxplot_", type, sep="_")
+    fileext <- ".jpg"
+    path <- 'C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\R\\figures\\boxplots\\'
+    jpeg(paste(path,filename,fileext,sep=""))
+    rain_vtr = db.extract(rain.db, "precip_mm")
+    boxplot(rain_vtr)
+    dev.off()
+   
+    #check what the outliers are
+    upperq <- quantile(rain_vtr, na.rm = TRUE)[4]
+    lowerq <- quantile(rain_vtr, na.rm = TRUE)[2]
+    inter_quantile_range  <- upperq - lowerq
+    range <- 1.5
+    u.thresh <- upperq + (inter_quantile_range*range)
+    l.thresh <- lowerq - (inter_quantile_range*range)
+    l.thresh <- ifelse(l.thresh<0, 0, l.thresh)
+    outlier_db <- db.sel(rain.db, precip_mm > u.thresh | precip_mm < l.thresh, combine="and")
+    outliers = append(outliers, db.extract(outlier_db, c("rank")))
     
     #create semivariogram including 4 directional one to check for anisotropy
     data.vario <- vario.calc(rain.db,lag=500,nlag=40)
@@ -45,7 +69,7 @@ for(i in 1:20)
     
     #create grid and perform kriging
     grid.db <- db.grid.init(rain.db,nodes=c(100,100))
-    rain.db <- db.locate(rain.db,seq(9,10))
+    rain.db <- db.locate(rain.db,seq(10,11))
     rain.db <- db.locate(rain.db,"precip_mm","z")
     grid.db <- kriging(rain.db,grid.db,data.model,unique.neigh,radix="ku")
     
@@ -73,6 +97,13 @@ for(i in 1:20)
     dev.off()
     
     #clean up
-    rain.db <- db.delete(rain.db, seq(7,10))
-    }
+    rain.db <- db.delete(rain.db, seq(8,11))
+}
+
+for (i in 1:length(outliers)){
+  write.table(rain.db[outliers[i]], file="outliers.csv", append=T, col.names = NA, sep = ",")
+}
+
+
+
 

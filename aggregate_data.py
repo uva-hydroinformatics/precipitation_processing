@@ -29,15 +29,15 @@ def get_data_frame_from_table(table_name):
 
 def make_incremental(df, date_range):
     newdf = pandas.DataFrame()
+    non_cumulative_df = pandas.DataFrame()
     for date in date_range:
         date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
         df_date = df[date_string]
-        us = len(df_date['site_name'].unique())
         df_date = df_date.groupby(['x', 'y'])
-        for group in df_date:
-            xy_df = group[1]
+        for location in df_date:
+            xy_df = location[1]
             cum_precip_arr = np.array(xy_df['precip_mm'])
-            if cum_precip_arr[0]>0:
+            if cum_precip_arr[0] > 0:
                 incr_precip = [cum_precip_arr[0]] #TODO: decide whether or not to keep this or make it zero to begin with
             else:
                 incr_precip = [0]
@@ -45,10 +45,12 @@ def make_incremental(df, date_range):
                 if cum_precip_arr[i+1] >= cum_precip_arr[i]:
                     incr_precip.append(cum_precip_arr[i+1] - cum_precip_arr[i])
                 else:
+                    non_cumulative_df = non_cumulative_df.append(location[1].iloc[[i]])
                     incr_precip.append(cum_precip_arr[i+1])
             xy_df.loc[:, 'precip_mm'] = incr_precip
             newdf = newdf.append(xy_df)
     newdf = newdf.reset_index(inplace=False)
+    non_cumulative_df.to_csv("{}.csv".format("non_cumulative"), mode='a')
     return newdf
 
 
@@ -56,7 +58,7 @@ def aggregate_time_steps(df, hours, date, wu):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
     date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
     df_date = df[date_string]
-    df_date = df_date.groupby(['x', 'y', 'src'])
+    df_date = df_date.groupby(['x', 'y', 'site_name', 'src'])
     df_date = df_date.resample('D', how={'precip_mm': 'sum'})
     df_date = df_date.reset_index(inplace=False)
     return df_date
@@ -90,13 +92,11 @@ df = get_data_frame_from_table('vabeach_reformat_mm')
 df['datetime'] = pandas.to_datetime(df['datetime'])
 vab_df = df.set_index('datetime')
 vab_df.insert(len(vab_df.columns), 'src', 'vab')
-df_list.append(vab_df)
 
 df = get_data_frame_from_table('hrsd_obs_spatial')
 df['datetime'] = pandas.to_datetime(df['datetime'])
 hrsd_df = df.set_index('datetime')
 hrsd_df.insert(len(hrsd_df.columns), 'src', 'hrsd')
-df_list.append(hrsd_df)
 
 df = get_data_frame_from_table('wu_observation_spatial')
 df['datetime'] = pandas.to_datetime(df['datetime'])
@@ -104,7 +104,8 @@ df = df.set_index('datetime')
 inc_df = make_incremental(df, date_range)
 wu_df = inc_df.set_index('datetime')
 wu_df.insert(len(wu_df.columns), 'src', 'wu')
-df_list.append(wu_df)
+
+df_list = [wu_df, hrsd_df, vab_df]
 
 #combine the dfs in the list together
 combined_df = pandas.DataFrame()
