@@ -14,10 +14,9 @@ rain.db <- db.locate(rain.db, "precip_mm","z")
 unique.neigh <- neigh.init(ndim = 2, type = 0)
 moving.neigh <- neigh.init(ndim = 2, type = 2, nmini = 1, nmaxi = 8, nsect = 8, nsmax = 2, flag.sector=TRUE, dmax = 10000)
 
-outliers <- matrix(c("site_name", "data_src", "datetime", "precip", "low/high", "quantile", "number of iqr's away"), ncol = 7, byrow = 1)
+outliers <- matrix(c("Index", "High quantile", "low quantile", "interquantile range"), ncol = 4, byrow = 1)
 
-for(i in 1:20)
-{
+for (i in 1:20){
     print(i)  
     
     
@@ -39,6 +38,8 @@ for(i in 1:20)
     #check what the outliers are
     upperq <- quantile(rain_vtr, na.rm = TRUE)[4]
     lowerq <- quantile(rain_vtr, na.rm = TRUE)[2]
+    upperq <- unname(upperq)
+    lowerq <- unname (lowerq)
     inter_quantile_range  <- upperq - lowerq
     range <- 1.5
     u.thresh <- upperq + (inter_quantile_range*range)
@@ -48,20 +49,7 @@ for(i in 1:20)
     outlier_ranks = db.extract(outlier_db, c("rank"))
     if(length(outlier_ranks>0)){
       for (j in 1:length(outlier_ranks)){
-        out_df = rain.db[outlier_ranks[j]]
-        x <- out_df$precip_mm
-        site_name <- as.character(out_df$site_name)
-        src <- as.character(out_df$src)
-        datetime <- as.character(out_df$datetime)
-        if(x>u.thresh){
-          out_of_range <- (x-upperq)/unname(inter_quantile_range)
-          write.table(c(site_name, src, datetime, x, "high", unname(upperq), unname(out_of_range)),file="outliers.csv", append=T, col.names = NA, sep = ",")
-        }
-        else{
-          out_of_range <- (lowerq-x)/unname(inter_quantile_range)
-          write.table(c(site_name, src, datetime, x, "low", unname(lowerq), unname(out_of_range)), file="outliers.csv", append=T, col.names = NA, sep = ",")
-        }
-        
+          outliers <- rbind(outliers, c(outlier_ranks[j], upperq, lowerq, inter_quantile_range))  
       }
     }
     
@@ -121,7 +109,27 @@ for(i in 1:20)
     rain.db <- db.delete(rain.db, seq(8,11))
 }
 
-write.table(outliers, file="outliers.csv", append=T, col.names = NA, sep = ",")
+outlier_table <- matrix(c("site_name", "src", "datetime", "precip", "low/high", "quantile", "number of iqr's away"), ncol = 7, byrow = 1)
+for (j in 2:nrow(outliers)){
+         out_df = rain.db[as.numeric(outliers[j,1])]
+         out_df <- as.vector(t(out_df))
+         x <- as.numeric(out_df[7])
+         site_name <- out_df[4]
+         src <- out_df[5]
+         datetime <- out_df[6]
+         upperq = as.numeric(outliers[j,2])
+         lowerq = as.numeric(outliers[j,3])
+         inter_quantile_range = as.numeric(outliers[j,4])
+        if(x>upperq){
+          out_of_range <- (x-upperq)/inter_quantile_range
+          outlier_table <- rbind(outlier_table,c(site_name, src, datetime, x, "high", upperq, out_of_range))
+        }
+        else{
+          out_of_range <- (lowerq-x)/inter_quantile_range
+          outlier_table <- rbind(outlier_table, c(site_name, src, datetime, x, "low", lowerq, out_of_range))
+        }
+}
+write.table(outlier_table, file="outliers.csv", append=T, col.names = NA, sep = ",")
 
 
 
