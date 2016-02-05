@@ -9,6 +9,7 @@ rain.db <- db.create(rain.csv,ndim=2,autoname=F,flag.grid=F)
 #set precip to the z variable
 rain.db <- db.locate(rain.db, "sitename")
 rain.db <- db.locate(rain.db, "precip_mm","z")
+orig.db <- rain.db
 
 #create neighbor objects for interpolation
 unique.neigh <- neigh.init(ndim = 2, type = 0)
@@ -18,7 +19,7 @@ outliers <- matrix(c("Index", "High quantile", "low quantile", "interquantile ra
 
 for (i in 1:20){
     print(i)  
-    
+    rain.db <- orig.db
     
     #select only data for given date
     rain.db <- db.sel(rain.db,datetime==dates[i])
@@ -54,7 +55,7 @@ for (i in 1:20){
     }
     
     #exclude outliers
-    #rain.db <- db.sel(rain.db, (precip_mm < u.thresh & precip_mm > l.thresh), combine="and")
+    rain.db <- db.sel(rain.db, (precip_mm < u.thresh & precip_mm > l.thresh), combine="and")
 
     #create semivariogram including 4 directional one to check for anisotropy
     data.vario <- vario.calc(rain.db,lag=500,nlag=40)
@@ -109,6 +110,9 @@ for (i in 1:20){
     rain.db <- db.delete(rain.db, seq(8,11))
 }
 
+
+
+#compiles all of the outliers computes the number of iqrs from the quantile and writes them to a csv file
 outlier_table <- matrix(c("site_name", "src", "datetime", "precip", "low/high", "quantile", "number of iqr's away"), ncol = 7, byrow = 1)
 for (j in 2:nrow(outliers)){
          out_df = rain.db[as.numeric(outliers[j,1])]
@@ -129,7 +133,7 @@ for (j in 2:nrow(outliers)){
           outlier_table <- rbind(outlier_table, c(site_name, src, datetime, x, "low", lowerq, out_of_range))
         }
 }
-write.table(outlier_table, file="outliers.csv", append=T, col.names = NA, sep = ",")
+write.table(outlier_table, file="outliers.csv", col.names = NA, sep = ",")
 
 
 
