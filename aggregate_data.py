@@ -54,12 +54,12 @@ def make_incremental(df, date_range):
     return newdf
 
 
-def aggregate_time_steps(df, hours, date, wu):
+def aggregate_time_steps(df, date):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
     date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
     df_date = df[date_string]
     df_date = df_date.groupby(['x', 'y', 'site_name', 'src'])
-    df_date = df_date.resample('D', how={'precip_mm': 'sum'})
+    df_date = df_date.resample('15T', how={'precip_mm': 'sum'})
     df_date = df_date.reset_index(inplace=False)
     return df_date
 
@@ -114,7 +114,7 @@ for df in df_list:
 
 combined_agg_df = pandas.DataFrame()
 for date in date_range:
-    indivi_df = aggregate_time_steps(combined_df, 24, date, wu=False)
+    indivi_df = aggregate_time_steps(combined_df, date)
     combined_agg_df = combined_agg_df.append(indivi_df)
 
-combined_agg_df.to_csv("{}.csv".format("combined_aggregate"), mode='w', index=False)
+combined_agg_df.to_csv("{}.csv".format("combined_aggregate_15_min"), mode='w', index=False)
