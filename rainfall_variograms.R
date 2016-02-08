@@ -19,17 +19,19 @@ get.sum.stats <- function(data, date, lag, nlag, outliers){
 
 
 
-dates=c('2013-07-02', '2013-10-09', '2014-01-11', '2014-02-13', '2014-04-15', '2014-04-25', '2014-07-10', '2014-08-18', '2014-09-08', '2014-09-09', '2014-09-13', '2014-11-26', '2014-12-24', '2015-04-14', '2015-06-02', '2015-06-24', '2015-08-07', '2015-08-20', '2015-09-30', '2015-10-02')
 
 #read in csvfile and change into rgeostats db object
-rain.csv <- read.csv(file="C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\precipitation_processing\\combined_aggregate.csv", head=TRUE, sep=",")
+rain.csv <- read.csv(file="C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\precipitation_processing\\combined_aggregate_15_min.csv", head=TRUE, sep=",")
 rain.db <- db.create(rain.csv,ndim=2,autoname=F,flag.grid=F)
+
+dates=levels(unique(rain.csv$datetime))
+
 
 #set precip to the z variable
 rain.db <- db.locate(rain.db, "sitename")
 rain.db <- db.locate(rain.db, "precip_mm","z")
 #change which sources you would like to consider
-type <- "wu_vab_filt"
+type <- "wu_vab_filt_15_min"
 rain.db <- db.sel(rain.db,src=="wu" | src=="vab")
 
 #lag and number of lags for variograms
@@ -92,6 +94,6 @@ for (i in 1:length(dates)){
     rain.db <- db.delete(rain.db, seq(8,11))
 }
 
-write.table(sum.stats, file="variogram_summary_stats.csv", sep = ",", row.names = F)
+write.table(sum.stats, file="variogram_summary_stats_15_min.csv", sep = ",", row.names = F)
 
 
