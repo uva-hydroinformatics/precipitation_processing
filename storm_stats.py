@@ -58,19 +58,22 @@ def autolabel(ax, rects):
     for rect in rects:
         height = rect.get_height()
         if math.isnan(height): continue
-        ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+        ax.text(rect.get_x() + rect.get_width()/2., 1+height,
                 '%d' % int(height),
-                ha='center', va='bottom')
+                ha='center',
+                va='bottom',
+                fontsize=9)
 
-def graph_bars(ax, x, y, title, ylab, xlabs):
-    print ("graphing bars for {}".format(title))
-    width = 1.
-    rects = ax.bar(x, y, width)
-    ax.set_ylabel(ylab)
-    ax.set_xticks(x+width/2)
-    ax.set_xticklabels(xlabs, rotation='vertical')
-    ax.set_title(title)
+def graph_bars(ax, x, y, **kwargs):
+    k = kwargs
+    print ("graphing bars for {}".format(k['title']))
+    rects = ax.bar(x, y, k['width'], color=k['color'])
+    ax.set_ylabel(k['ylab'])
+    ax.set_xticks(x)
+    ax.set_xticklabels(k['xlabs'], rotation='vertical')
+    ax.set_title(k['title'])
     autolabel(ax, rects)
+    return rects
 
 def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale):
     print ("graphing scatter for {}".format(title))
@@ -231,7 +234,9 @@ empty_daily_tots_df = combined_df.loc[:,['site_name', 'x', 'y', 'src']].set_inde
 type = 'with_wu_filt'
 fig_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/figures/python/storm_stats/{}/filt/'.format("with_wu")
 
-# get the summary statistics
+
+
+## get the summary statistics ##
 daily_tots_df = get_daily_tots_df(empty_daily_tots_df, combined_df, date_range)
 plot_scatter_subplots(daily_tots_df, "Total cummulative precip (mm)", type, fig_dir, "total_cummulative_precip", 1)
 
@@ -243,13 +248,13 @@ plot_scatter_subplots(max_daily_intensities_hour, "Max daily intensity (mm/hour)
 
 durations = get_storm_durations(combined_df, date_range, 0.05)
 
-#bar chart for overall sum by stations
+##bar chart for overall sum by stations ##
 fig, ax = plt.subplots(1, 2, figsize=(10, 10))
 sum_by_station = daily_tots_df.iloc[:,3:].sum(axis=1)
 barX = np.arange(len(sum_by_station))
 graph_bars(ax[0], barX, sum_by_station, title="", xlabs=sum_by_station.index, ylab="precip (mm)")
 
-#scatter for overall sum by station
+##scatter for overall sum by station ##
 graph_scatter(ax[1],
               daily_tots_df.x,
               daily_tots_df.y,
@@ -262,16 +267,21 @@ fig.suptitle("Summary by station")
 plt.tight_layout()
 plt.savefig("{}{}_{}.png".format(fig_dir, "overall_summary_by_station", type))
 
-#bar graph for mean rainfall for each day
-fig, ax = plt.subplots()
+## bar graph for mean rainfall for each day ##
+fig, ax = plt.subplots(figsize=(20,10))
 daily_totals = daily_tots_df.iloc[:,3:].mean()
-x = np.arange(len(daily_totals))
+daily_std = daily_tots_df.iloc[:,3:].std()
+x = np.arange(len(daily_totals)*2, step =2)
 y = daily_totals
-graph_bars(ax, x, y, title="overall summary by date", xlabs=daily_totals.index, ylab="cumulative total precip (mm)")
-plt.tight_layout()
+width = 0.75
+r1 = graph_bars(ax, x, y, title="overall summary by date", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='b')
+r2 = graph_bars(ax, x+width, daily_std, title="overall summary by date", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='y')
+ax.set_ylim(top=daily_totals.max()*1.1)
+ax.legend((r1[0], r2[0]), ("Volume", "St. Dev"))
+fig.tight_layout()
 plt.savefig('{}{}_{}.png'.format(fig_dir, "overall_summary_by_date", type))
 
-#compile overall storm summary table
+#compile overall storm summary table ##
 overall_summary_df_by_date = durations.join(pd.DataFrame({'mean_total_rainfall_volume (mm)': daily_tots_df.mean()}))
 overall_summary_df_by_date['average_intensity (mm/hr)'] = overall_summary_df_by_date['mean_total_rainfall_volume (mm)']/overall_summary_df_by_date['duration (hr)']
 overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_hourly_intensity (mm/hr)': max_daily_intensities_hour.mean()}))
@@ -279,5 +289,5 @@ overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_
 overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_15min_intensity (mm/15 min)': max_daily_intensities_fifteen.mean()}))
 overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_15min_intensity (mm/15 min)': max_daily_intensities_fifteen.max()}))
 
-#write to csv file
+#write to csv file ##
 overall_summary_df_by_date.to_csv("C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/overall_summary_by_date.csv")
