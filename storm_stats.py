@@ -8,10 +8,11 @@ import pyodbc
 import datetime
 import matplotlib.pyplot as plt
 import math
+import os
 
 
 def get_data_frame_from_table(table_name):
-    print 'getting data for {}'.format(table_name)
+    print 'fetching data from database for {}'.format(table_name)
     # set up db connection
     MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb"; DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
 
@@ -28,14 +29,12 @@ def get_data_frame_from_table(table_name):
     con.close()
     return df
 
-
 def make_incremental(df, date_range):
     newdf = pd.DataFrame()
     non_cumulative_df = pd.DataFrame()
     for date in date_range:
         print "making incremental for {}".format(date)
-        date_string = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
-        df_date = df[date_string]
+        df_date = df[date]
         df_date = df_date.groupby(['x', 'y'])
         for location in df_date:
             xy_df = location[1]
@@ -72,28 +71,27 @@ def graph_bars(ax, x, y, **kwargs):
     ax.set_xticks(x)
     ax.set_xticklabels(k['xlabs'], rotation='vertical')
     ax.set_title(k['title'])
-    autolabel(ax, rects)
+    # autolabel(ax, rects)
     return rects
 
 def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale):
     print ("graphing scatter for {}".format(title))
-    sc = ax.scatter(x, y, c=scale, cmap='Blues', s=scale**marker_scale, vmin=c_limits[0], vmax=c_limits[1])
-    ax.set_title(title, fontsize=8)
+    sc = ax.scatter(x, y, c=scale, cmap='Blues', s=scale*marker_scale, vmin=c_limits[0], vmax=c_limits[1])
+    ax.set_title(title, fontsize=9.5, weight="bold")
     ax.tick_params(labelsize=8)
     ax.locator_params(nbins=5)
     return sc
 
 def get_daily_aggregate(df, date, time_step):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
-    df_date = df[date]
-    df_gp = df_date.groupby(['x', 'y', 'site_name', 'src'])
+    df = df[date]
+    df_gp = df.groupby(['x', 'y', 'site_name', 'src'])
     df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
     return df_agg
 
-def get_daily_tots_df(summary_df, df, date_range):
+def get_daily_tots_df(summary_df, df, date_range, time_step):
     for date in date_range:
-        date = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
-        daily_tot = get_daily_aggregate(df, date, "D")
+        daily_tot = get_daily_aggregate(df, date, time_step)
         daily_tot = daily_tot.sum(level="site_name") #todo: add code to this so we can look at different time intervals (hourly, 15 min)
 
         #add to summary dataframe
@@ -101,16 +99,58 @@ def get_daily_tots_df(summary_df, df, date_range):
         summary_df = summary_df.join(daily_tot[date])
     return summary_df
 
-def plot_scatter_subplots(df, units, type, dir, title, marker_scale):
-    fig, a = plt.subplots(10, 2, figsize=(10,10), sharex=True, sharey = True)
-    a = a.ravel()
+def  get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
+    l = []
+    for date in date_range:
+        sdf = summary_df
+        print "getting subdaily values for {}".format(date)
+        df_date = df[date]
+
+        #get duration
+        e = dur_df["end_time"][date]
+        s = dur_df["start_time"][date]
+        time_range = pd.date_range(s, e, freq=time_step)
+        time_range_formatted = []
+        for t in time_range:
+            time_range_formatted.append(t._repr_base)
+
+        #aggregate by 15 mins
+        df_gp = df_date.groupby(['x', 'y', 'site_name', 'src'])
+        df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
+        df_agg = df_agg.reset_index()
+        df_agg = df_agg.set_index("datetime")
+
+        #sum for each time step in duration
+        for time in time_range_formatted:
+            t = get_daily_aggregate(df_agg, time, time_step)
+            t = t.sum(level="site_name") #todo: add code to this so we can look at different time intervals (hourly, 15 min)
+
+            #add to summary dataframe
+            t.rename(columns={'precip_mm': time}, inplace=True)
+            sdf = sdf.join(t[time])
+        l.append((date, sdf))
+    return l
+
+
+def plot_scatter_subplots(df, **kwargs):
+    k = kwargs
+    num_cols = len(df.columns[3:])
+    if num_cols<2:
+        fig, a = plt.subplots(1, figsize=(10,10), sharex=True, sharey = True)
+        a = [a]
+    else:
+        fig, a = plt.subplots(5, 4, sharex=True, sharey = True, figsize=(10,10))
+        a = a.ravel()
+    for ax in a:
+        ax.tick_params(labelsize=8)
+        ax.locator_params(nbins=5)
+
     #scatter subplots for all days
-    c_limits = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
+    c_limits = k.get('c_limits', (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max()))
     i = 0
     for col in df.columns[3:]:
         #check if value is below a certain level in mm, leave it out
-        threshold = 1 #mm
-        d= df[daily_tots_df[col] > threshold]
+        d = df[df[col] > k['threshold']]
 
         sc = graph_scatter(a[i],
                            d.x/1000,
@@ -118,29 +158,72 @@ def plot_scatter_subplots(df, units, type, dir, title, marker_scale):
                            col,
                            d[col],
                            c_limits,
-                           marker_scale)
+                           k['marker_scale'])
         i += 1
-    cax = fig.add_axes([0.915, 0.1, 0.025, 0.8])
+    cax = fig.add_axes([0.815, 0.1, 0.025, 0.8])
     cb = fig.colorbar(sc, cax=cax)
-    cb.set_label(units)
-    fig.text(0.05, .5, "y [km]", rotation="vertical")
-    fig.text(.5, .05, "x [km]")
-    plt.tick_params(labelsize=10)
-    plt.subplots_adjust(wspace=0.1, hspace=.3)
-    plt.savefig("{}{}_{}".format(dir, title, type))
-    # plt.show()
+    cb.set_label(k['units'], fontsize=15)
+    fig.text(.06, .5, "y [km]", rotation="vertical")
+    fig.text(.4, .05, "x [km]")
+    plt.tick_params(labelsize=12)
+    plt.subplots_adjust(wspace=0.25, hspace=.3, right=0.8)
+    plt.savefig("{}{}_{}.png".format(k['dir'], k['title'], k['type']), dpi=400)
 
 
+def plot_subdaily_scatter(df_list, **kwargs):
+    #get number of 20 subplot figures we need
+    dir = kwargs['dir']
+    dir += "subdaily/"
+    for d in df_list:
+        date = d[0]
+        df = d[1]
+        n_subplots_per_fig = 20
+        startcol = 3
+
+        num_obs = len(df.columns[startcol:])
+        num_figs = num_obs/n_subplots_per_fig
+
+        date_dir = "{}{}/".format(dir, date)
+        if not os.path.exists(date_dir):
+            os.makedirs(date_dir)
+
+        clims = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
+
+        #plot 20 sublots at a time
+        for i in range(num_figs):
+            plot_df = df.iloc[:, :startcol]
+            scol = startcol+n_subplots_per_fig*i
+            ecol = startcol+n_subplots_per_fig+n_subplots_per_fig*i
+            p = plot_df.join(df.iloc[:, scol:ecol])
+            t0 = p.columns[startcol].replace(":", ".")
+            t1 = p.columns[n_subplots_per_fig+startcol-1].replace(":", ".")
+            title = "{} - {}".format(t0, t1)
+            kwargs['title'] = title
+            kwargs['c_limits'] = clims
+            kwargs['dir'] = date_dir
+            plot_scatter_subplots(p,
+                                  **kwargs)
+
+        #add last storms (those above the last divisible by 20 storms)
+        if num_obs%20 != 0:
+            plot_df = df.iloc[:,:startcol]
+            scol = startcol+n_subplots_per_fig*num_figs
+            p = plot_df.join(df.iloc[:, scol:])
+            t0 = p.columns[startcol].replace(":", ".")
+            t1 = p.columns[-1].replace(":", ".")
+            title = "{} - {}".format(t0, t1)
+            kwargs['title'] = title
+            plot_scatter_subplots(p,
+                                  **kwargs)
 def get_storm_durations(df, date_range, trim_percent):
     i = 0
     for date in date_range:
-        date = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
         df_agg = get_daily_aggregate(df, date, "15T")
         time_sums = df_agg.sum(level="datetime")
         trimmed_indices = time_sums[(time_sums['precip_mm']>trim_percent) & (time_sums['precip_mm']<(1-trim_percent))].index
-        start_time = trimmed_indices.min().time()
-        end_time = trimmed_indices.max().time()
-        duration = (trimmed_indices.max()-trimmed_indices.min()).total_seconds()/3600
+        start_time = trimmed_indices.min()
+        end_time = trimmed_indices.max()
+        duration = (end_time-start_time).total_seconds()/3600
         if i == 0:
             dur_df = pd.DataFrame({'start_time': [start_time], 'end_time':[end_time], 'date': [date], 'duration (hr)': [duration]})
         else:
@@ -151,7 +234,6 @@ def get_storm_durations(df, date_range, trim_percent):
 
 def get_daily_max_intensities(summary_df, df, date_range, time_step):
     for date in date_range:
-        date = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
         df_agg = get_daily_aggregate(df, date, "15T")
         if time_step == 'H':
             df_agg = pd.rolling_sum(df_agg, 4).max(level='site_name')
@@ -162,6 +244,13 @@ def get_daily_max_intensities(summary_df, df, date_range, time_step):
         df_agg.rename(columns={'precip_mm': date}, inplace=True)
         summary_df = summary_df.join(df_agg[date])
     return summary_df
+
+def reformat_dates(dr):
+    formatted = []
+    for date in dr:
+        date = datetime.datetime.strptime(str(date), '%Y%m%d').strftime('%Y-%m-%d')
+        formatted.append(date)
+    return formatted
 
 
 hrsd_stations_in_study_area = ["MMPS-171",
@@ -201,6 +290,8 @@ date_range = [
               20151002
               ]
 
+date_range = reformat_dates(date_range)
+
 
 # prepare the data by pulling from the database and making the datetime the index
 df = get_data_frame_from_table('vabeach_reformat_mm')
@@ -231,63 +322,66 @@ for df in df_list:
 #create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
 empty_daily_tots_df = combined_df.loc[:,['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
 
-type = 'with_wu_filt'
+type = 'no_err_bar'
 fig_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/figures/python/storm_stats/{}/filt/'.format("with_wu")
 
 
 
 ## get the summary statistics ##
-daily_tots_df = get_daily_tots_df(empty_daily_tots_df, combined_df, date_range)
-plot_scatter_subplots(daily_tots_df, "Total cummulative precip (mm)", type, fig_dir, "total_cummulative_precip", 1)
-
-max_daily_intensities_fifteen = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "15T")
-plot_scatter_subplots(max_daily_intensities_fifteen, "Max daily intensity (mm/15 min)", type, fig_dir, "max_daily_intensities_15_min", 1.3)
-
-max_daily_intensities_hour = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "H")
-plot_scatter_subplots(max_daily_intensities_hour, "Max daily intensity (mm/hour)", type, fig_dir, "max_daily_intensities_hour", 1.1)
-
+# daily_tots_df = get_daily_tots_df(empty_daily_tots_df, combined_df, date_range, "D")
 durations = get_storm_durations(combined_df, date_range, 0.05)
+t = get_subdaily_df(empty_daily_tots_df, combined_df, date_range, durations, "15T")
+plot_subdaily_scatter(t, units="mm", type="subdaily", dir=fig_dir, marker_scale=15, threshold=-1)
+# plot_scatter_subplots(daily_tots_df, "Total cummulative precip (mm)", type, fig_dir, "total_cummulative_precip", 1)
+#
+# max_daily_intensities_fifteen = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "15T")
+# plot_scatter_subplots(max_daily_intensities_fifteen, "Max daily intensity (mm/15 min)", type, fig_dir, "max_daily_intensities_15_min", 1.3)
+#
+# max_daily_intensities_hour = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "H")
+# plot_scatter_subplots(max_daily_intensities_hour, "Max daily intensity (mm/hour)", type, fig_dir, "max_daily_intensities_hour", 1.1)
+#
 
-##bar chart for overall sum by stations ##
-fig, ax = plt.subplots(1, 2, figsize=(10, 10))
-sum_by_station = daily_tots_df.iloc[:,3:].sum(axis=1)
-barX = np.arange(len(sum_by_station))
-graph_bars(ax[0], barX, sum_by_station, title="", xlabs=sum_by_station.index, ylab="precip (mm)")
-
-##scatter for overall sum by station ##
-graph_scatter(ax[1],
-              daily_tots_df.x,
-              daily_tots_df.y,
-              title="",
-              scale=sum_by_station,
-              c_limits=(sum_by_station.min(),
-                        sum_by_station.max()),
-              marker_scale=.6)
-fig.suptitle("Summary by station")
-plt.tight_layout()
-plt.savefig("{}{}_{}.png".format(fig_dir, "overall_summary_by_station", type))
-
+#
+# ##bar chart for overall sum by stations ##
+# fig, ax = plt.subplots(1, 2, figsize=(10, 10))
+# sum_by_station = daily_tots_df.iloc[:,3:].sum(axis=1)
+# barX = np.arange(len(sum_by_station))
+# graph_bars(ax[0], barX, sum_by_station, title="", xlabs=sum_by_station.index, ylab="precip (mm)", width=1, color='b')
+#
+# ##scatter for overall sum by station ##
+# graph_scatter(ax[1],
+#               daily_tots_df.x,
+#               daily_tots_df.y,
+#               title="",
+#               scale=sum_by_station,
+#               c_limits=(sum_by_station.min(),
+#                         sum_by_station.max()),
+#               marker_scale=.6)
+# fig.suptitle("Summary by station")
+# plt.tight_layout()
+# plt.savefig("{}{}_{}.png".format(fig_dir, "overall_summary_by_station", type))
+#
 ## bar graph for mean rainfall for each day ##
-fig, ax = plt.subplots(figsize=(20,10))
-daily_totals = daily_tots_df.iloc[:,3:].mean()
-daily_std = daily_tots_df.iloc[:,3:].std()
-x = np.arange(len(daily_totals)*2, step =2)
-y = daily_totals
-width = 0.75
-r1 = graph_bars(ax, x, y, title="overall summary by date", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='b')
-r2 = graph_bars(ax, x+width, daily_std, title="overall summary by date", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='y')
-ax.set_ylim(top=daily_totals.max()*1.1)
-ax.legend((r1[0], r2[0]), ("Volume", "St. Dev"))
-fig.tight_layout()
-plt.savefig('{}{}_{}.png'.format(fig_dir, "overall_summary_by_date", type))
-
-#compile overall storm summary table ##
-overall_summary_df_by_date = durations.join(pd.DataFrame({'mean_total_rainfall_volume (mm)': daily_tots_df.mean()}))
-overall_summary_df_by_date['average_intensity (mm/hr)'] = overall_summary_df_by_date['mean_total_rainfall_volume (mm)']/overall_summary_df_by_date['duration (hr)']
-overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_hourly_intensity (mm/hr)': max_daily_intensities_hour.mean()}))
-overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_hourly_intensity (mm/hr)': max_daily_intensities_hour.max()}))
-overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_15min_intensity (mm/15 min)': max_daily_intensities_fifteen.mean()}))
-overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_15min_intensity (mm/15 min)': max_daily_intensities_fifteen.max()}))
-
-#write to csv file ##
-overall_summary_df_by_date.to_csv("C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/overall_summary_by_date.csv")
+# fig, ax = plt.subplots(figsize=(7,3.5))
+# daily_totals = daily_tots_df.iloc[:,3:].mean()
+# daily_std = daily_tots_df.iloc[:,3:].std()
+# x = np.arange(len(daily_totals)*2, step=2)
+# y = daily_totals
+# width = 0.75
+# r1 = graph_bars(ax, x, y, title="", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='b')
+# r2 = graph_bars(ax, x+width, daily_std, title="", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='y')
+# ax.set_ylim(top=daily_totals.max()*1.1)
+# ax.legend((r1[0], r2[0]), ("Volume", "St. Dev"))
+# fig.tight_layout()
+# plt.savefig('{}{}_{}.png'.format(fig_dir, "overall_summary_by_date", type))
+#
+# ##compile overall storm summary table ##
+# overall_summary_df_by_date = durations.join(pd.DataFrame({'mean_total_rainfall_volume (mm)': daily_tots_df.mean()}))
+# overall_summary_df_by_date['average_intensity (mm/hr)'] = overall_summary_df_by_date['mean_total_rainfall_volume (mm)']/overall_summary_df_by_date['duration (hr)']
+# overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_hourly_intensity (mm/hr)': max_daily_intensities_hour.mean()}))
+# overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_hourly_intensity (mm/hr)': max_daily_intensities_hour.max()}))
+# overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_15min_intensity (mm/15 min)': max_daily_intensities_fifteen.mean()}))
+# overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_15min_intensity (mm/15 min)': max_daily_intensities_fifteen.max()}))
+#
+# #write to csv file ##
+# overall_summary_df_by_date.to_csv("C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/overall_summary_by_date.csv")
