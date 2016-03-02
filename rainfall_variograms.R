@@ -17,23 +17,11 @@ get.sum.stats <- function(data, date, lag, nlag, outliers){
   
 }
 
-# returns string w/o trailing whitespace
-trim.trailing <- function (x) sub("\\s+$", "", x)
-
 
 
 #read in csvfile and change into rgeostats db object
-filename = "combined_aggregate.csv"
-rain.csv <- read.csv(file=paste("C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\precipitation_processing\\", filename, sep=""), head=TRUE, sep=",")
-
-#subset hrsd for only the study area
-hrsd_stations_in_study_area = c("MMPS-171","MMPS-185","MMPS-163","MMPS-255","MMPS-146","MMPS-004","MMPS-256","MMPS-140","MMPS-160","MMPS-144", "MMPS-036","MMPS-093-2")
-levels(rain.csv$site_name) = trim.trailing(levels(rain.csv$site_name))
-rain.sub.hrsd <- rain.csv[rain.csv$site_name %in% hrsd_stations_in_study_area,]
-rain.csv <- subset(rain.csv, src == 'wu' | src == 'vab')
-rain.csv <- rbind(rain.csv, rain.sub.hrsd)
-
-
+filename = "combined_aggregate_filt.csv"
+rain.csv <- read.csv(file=paste("C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\data\\", filename, sep=""), head=TRUE, sep=",")
 
 rain.db <- db.create(rain.csv,ndim=2,autoname=F,flag.grid=F)
 
@@ -45,11 +33,11 @@ rain.db <- db.locate(rain.db, "sitename")
 rain.db <- db.locate(rain.db, "precip_mm","z")
 
 #change which sources you would like to consider
-type <- "all_with_relevant_hrsd"
-#rain.db <- db.sel(rain.db,src=="wu" | src=="vab")
+type <- "relevant_hrsd_filt_2000_13"
+#rain.db <- db.sel(rain.db,src=="hrsd" | src=="vab")
 
 #lag and number of lags for variograms
-lag <- 500
+lag <- 1000
 nlag <- 20
 
 
@@ -92,7 +80,7 @@ for (i in 1:length(dates)){
                                                         
     
     #exclude outliers
-    rain.db <- db.sel(rain.db, (precip_mm < u.thresh & precip_mm > l.thresh), combine="and")
+    #rain.db <- db.sel(rain.db, (precip_mm < u.thresh & precip_mm > l.thresh), combine="and")
     
     #add single without outliers stats to sum.stats dataframe
     if(length(outlier_ranks)>0){
@@ -107,17 +95,17 @@ for (i in 1:length(dates)){
     #save experimental variogram and variogram model as jpeg
     filename <- paste(dates[i], "variogram_", type, sep="_")
     fileext <- ".jpg"
-    path <- 'C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\R\\figures\\variograms\\'
-    jpeg(paste(path,filename,fileext,sep=""))
-    plot(data.vario,npairdw=TRUE,npairpt=1, title=paste(type, "variogram for", dates[i], sep=" "), xlab = "lag (m)", ylab = "Variance")
-    plot(data.model, add=TRUE)
-    dev.off()
+    path <- 'C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\figures\\R\\figures\\variograms\\rel_hrsd_all\\'
+    #jpeg(paste(path,filename,fileext,sep=""))
+    plot(data.vario,npairdw=TRUE,npairpt=0, title=paste("", "variogram for", dates[i], sep=" "), xlab = "lag (m)", ylab = "Variance (mm^2/d)", pin = c(1,2), varline=F)
+    plot(data.model, add=TRUE, pin=c(1,1))
+    #dev.off()
   
     #clean up
     rain.db <- db.delete(rain.db, seq(8,11))
 }
 
-write.table(sum.stats, file=paste(type, "variogram_summary_stats_15_min.csv", sep="_"), sep = ",", row.names = F)
+write.table(sum.stats, file=paste(type, "variogram_summary_stats.csv", sep="_"), sep = ",", row.names = F)
 
 #compiles all of the outliers computes the number of iqrs from the quantile and writes them to a csv file
 outlier_table <- matrix(c("site_name", "src", "datetime", "precip", "low/high", "quantile", "number of iqr's away"), ncol = 7, byrow = 1)
