@@ -9,6 +9,9 @@ import datetime
 import matplotlib.pyplot as plt
 import math
 import os
+import matplotlib.animation as animation
+plt.rcParams['animation.ffmpeg_path'] = \
+    'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static\\ffmpeg-20160301-git-1c7e2cf-win64-static\\bin\\ffmpeg'
 
 
 def get_data_frame_from_table(table_name):
@@ -28,6 +31,7 @@ def get_data_frame_from_table(table_name):
     cur.close()
     con.close()
     return df
+
 
 def make_incremental(df, date_range):
     newdf = pd.DataFrame()
@@ -52,6 +56,7 @@ def make_incremental(df, date_range):
     non_cumulative_df.to_csv("{}.csv".format("non_cumulative"), mode='a')
     return newdf
 
+
 def autolabel(ax, rects):
     # attach some text labels
     for rect in rects:
@@ -74,6 +79,7 @@ def graph_bars(ax, x, y, **kwargs):
     # autolabel(ax, rects)
     return rects
 
+
 def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale):
     print ("graphing scatter for {}".format(title))
     sc = ax.scatter(x, y, c=scale, cmap='Blues', s=scale*marker_scale, vmin=c_limits[0], vmax=c_limits[1])
@@ -82,12 +88,14 @@ def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale):
     ax.locator_params(nbins=5)
     return sc
 
+
 def get_daily_aggregate(df, date, time_step):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
     df = df[date]
     df_gp = df.groupby(['x', 'y', 'site_name', 'src'])
     df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
     return df_agg
+
 
 def get_daily_tots_df(summary_df, df, date_range, time_step):
     for date in date_range:
@@ -99,7 +107,8 @@ def get_daily_tots_df(summary_df, df, date_range, time_step):
         summary_df = summary_df.join(daily_tot[date])
     return summary_df
 
-def  get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
+
+def get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
     l = []
     for date in date_range:
         sdf = summary_df
@@ -109,6 +118,8 @@ def  get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
         #get duration
         e = dur_df["end_time"][date]
         s = dur_df["start_time"][date]
+        if time_step == "H":
+            s = s - pd.Timedelta(minutes=s.minute)
         time_range = pd.date_range(s, e, freq=time_step)
         time_range_formatted = []
         for t in time_range:
@@ -170,10 +181,10 @@ def plot_scatter_subplots(df, **kwargs):
     plt.savefig("{}{}_{}.png".format(k['dir'], k['title'], k['type']), dpi=400)
 
 
-def plot_subdaily_scatter(df_list, **kwargs):
+def plot_subdaily_scatter(df_list, create_ani, **kwargs):
     #get number of 20 subplot figures we need
     dir = kwargs['dir']
-    dir += "subdaily/"
+    dir += "subdaily/hour/"
     for d in df_list:
         date = d[0]
         df = d[1]
@@ -183,9 +194,14 @@ def plot_subdaily_scatter(df_list, **kwargs):
         num_obs = len(df.columns[startcol:])
         num_figs = num_obs/n_subplots_per_fig
 
+
         date_dir = "{}{}/".format(dir, date)
         if not os.path.exists(date_dir):
             os.makedirs(date_dir)
+
+        if create_ani==True:
+            create_animation(df, date_dir)
+
 
         clims = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
 
@@ -215,6 +231,43 @@ def plot_subdaily_scatter(df_list, **kwargs):
             kwargs['title'] = title
             plot_scatter_subplots(p,
                                   **kwargs)
+
+
+def create_animation(df, dir):
+
+    #set up writer
+    Writer = animation.FFMpegWriter()
+
+    #set up figure
+    startcol = 3
+    num_obs = len(df.columns[startcol:])
+    fig = plt.figure()
+    clims = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
+    l = []
+
+    #create animation panels
+    for i in range(num_obs):
+        scale = df.iloc[:, startcol+i]
+        marker_scale = 12
+        p = plt.scatter(df.x/1000, df.y/1000, c=scale, cmap='Blues', s=scale*marker_scale, vmin=clims[0], vmax=clims[1])
+
+        date_and_time = df.columns[i+3]
+        space_loc = date_and_time.find(' ')
+        d = date_and_time[:space_loc]
+        t = date_and_time[space_loc+1:]
+        s = plt.text(3725, 1067, t)
+        plt.title(d)
+        if i == num_obs-1:
+            plt.ylabel("y[km]")
+            plt.xlabel("x[km]")
+            plt.colorbar(p)
+        l.append([p, s])
+
+    ani = animation.ArtistAnimation(fig, l, blit=True)
+    ani.save('{}{}_animation.mp4'.format(dir, d), writer=Writer)
+    # plt.show()
+
+
 def get_storm_durations(df, date_range, trim_percent):
     i = 0
     for date in date_range:
@@ -232,6 +285,7 @@ def get_storm_durations(df, date_range, trim_percent):
     dur_df = dur_df.set_index("date")
     return dur_df
 
+
 def get_daily_max_intensities(summary_df, df, date_range, time_step):
     for date in date_range:
         df_agg = get_daily_aggregate(df, date, "15T")
@@ -244,6 +298,7 @@ def get_daily_max_intensities(summary_df, df, date_range, time_step):
         df_agg.rename(columns={'precip_mm': date}, inplace=True)
         summary_df = summary_df.join(df_agg[date])
     return summary_df
+
 
 def reformat_dates(dr):
     formatted = []
@@ -330,8 +385,8 @@ fig_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/figures/python/
 ## get the summary statistics ##
 # daily_tots_df = get_daily_tots_df(empty_daily_tots_df, combined_df, date_range, "D")
 durations = get_storm_durations(combined_df, date_range, 0.05)
-t = get_subdaily_df(empty_daily_tots_df, combined_df, date_range, durations, "15T")
-plot_subdaily_scatter(t, units="mm", type="subdaily", dir=fig_dir, marker_scale=15, threshold=-1)
+t = get_subdaily_df(empty_daily_tots_df, combined_df, date_range, durations, "H")
+plot_subdaily_scatter(t, True, units="mm", type="subdaily", dir=fig_dir, marker_scale=12, threshold=-1)
 # plot_scatter_subplots(daily_tots_df, "Total cummulative precip (mm)", type, fig_dir, "total_cummulative_precip", 1)
 #
 # max_daily_intensities_fifteen = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "15T")
