@@ -10,12 +10,15 @@ import matplotlib.pyplot as plt
 import math
 import os
 import matplotlib.animation as animation
+from descartes import PolygonPatch
+import shapefile
+
 plt.rcParams['animation.ffmpeg_path'] = \
     'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static\\ffmpeg-20160301-git-1c7e2cf-win64-static\\bin\\ffmpeg'
 
-#######################################################################
-# Data preparation functions #########################################
-#######################################################################
+########################################################################################################################
+# Data preparation functions ###########################################################################################
+########################################################################################################################
 
 
 def get_data_frame_from_table(table_name):
@@ -61,9 +64,9 @@ def make_incremental(df, date_range):
     return newdf
 
 
-#######################################################################
-# Plotting functions #################################################
-#######################################################################
+########################################################################################################################
+# Plotting functions ###################################################################################################
+########################################################################################################################
 
 
 def autolabel(ax, rects):
@@ -83,53 +86,86 @@ def graph_bars(ax, x, y, **kwargs):
     print ("graphing bars for {}".format(k['title']))
     rects = ax.bar(x, y, k['width'], color=k['color'])
     ax.set_ylabel(k['ylab'])
-    ax.set_xticks(x)
-    ax.set_xticklabels(k['xlabs'], rotation='vertical')
+    ax.set_xticks(x+k['width']/2)
+    ax.set_xticklabels(k['xlabs'], rotation='vertical', fontsize=kwargs.get('font_size'))
     ax.set_title(k['title'])
     # autolabel(ax, rects)
     return rects
 
 
-def plot_sum_by_station_bars(summ_df, f_dir, flav):
-    fig, ax = plt.subplots(1, 2, figsize=(10, 10))
+def plot_sum_by_station_bars(summ_df, f_dir, flav, ply):
+    fig, ax = plt.subplots(1, 2, figsize=(10, 6))
 
-    ##bars for overall sum by station##
-    sum_by_station = summ_df.iloc[:,3:].sum(axis=1)
+    # bars for overall sum by station##
+    sum_by_station = summ_df.iloc[:,3:].mean(axis=1)
     barX = np.arange(len(sum_by_station))
-    graph_bars(ax[0], barX, sum_by_station, title="", xlabs=sum_by_station.index, ylab="precip (mm)", width=1, color='b')
+    graph_bars(ax[0],
+               barX,
+               sum_by_station,
+               title="",
+               xlabs=sum_by_station.index,
+               ylab="precip (mm)",
+               width=1,
+               color='b',
+               font_size=2)
 
-    ##scatter for overall sum by station ##
+    # scatter for overall sum by station ##
     graph_scatter(ax[1],
-                  summ_df.x,
-                  summ_df.y,
+                  summ_df.x/1000,
+                  summ_df.y/1000,
                   title="",
                   scale=sum_by_station,
                   c_limits=(sum_by_station.min(),
                             sum_by_station.max()),
-                  marker_scale=.6)
+                  marker_scale=2.6,
+                  ply = ply)
     fig.suptitle("Summary by station")
     plt.tight_layout()
-    plt.savefig("{}{}_{}.png".format(check_dir(f_dir), "overall_summary_by_station", flav))
+    plt.savefig("{}{}_{}.png".format(check_dir(f_dir), "overall_summary_by_station", flav), dpi=500)
 
 
 def plot_sum_by_day(summ_df, f_dir, flav):
     fig, ax = plt.subplots(figsize=(7,3.5))
-    daily_totals = summ_df.iloc[:,3:].mean()
-    daily_std = summ_df.iloc[:,3:].std()
+    daily_totals = summ_df.iloc[:, 3:].mean()
+    daily_std = summ_df.iloc[:, 3:].std()
     x = np.arange(len(daily_totals)*2, step=2)
     y = daily_totals
     width = 0.75
-    r1 = graph_bars(ax, x, y, title="", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='b')
-    r2 = graph_bars(ax, x+width, daily_std, title="", xlabs=daily_totals.index, ylab="cumulative total precip (mm)", width=width, color='y')
+    r1 = graph_bars(ax,
+                    x,
+                    y,
+                    title="",
+                    xlabs=daily_totals.index,
+                    ylab="cumulative total precip (mm)",
+                    width=width,
+                    color='b')
+    r2 = graph_bars(ax,
+                    x+width,
+                    daily_std,
+                    title="",
+                    xlabs=daily_totals.index,
+                    ylab="cumulative total precip (mm)",
+                    width=width,
+                    color='y')
     ax.set_ylim(top=daily_totals.max()*1.1)
     ax.legend((r1[0], r2[0]), ("Volume", "St. Dev"))
     fig.tight_layout()
     plt.savefig('{}{}_{}.png'.format(check_dir(f_dir), "overall_summary_by_date", flav))
 
 
-def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale):
+def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale, ply):
+    ax.add_patch(PolygonPatch(ply, fc='lightgrey', ec='grey', alpha=0.3))
+    ax.axis([3700, 3730, 1050, 1070])
     print ("graphing scatter for {}".format(title))
-    sc = ax.scatter(x, y, c=scale, cmap='Blues', s=scale*marker_scale, vmin=c_limits[0], vmax=c_limits[1])
+    sc = ax.scatter(x,
+                    y,
+                    c=scale,
+                    cmap='Blues',
+                    s=scale*marker_scale+1,
+                    vmin=c_limits[0],
+                    vmax=c_limits[1],
+                    linewidth=0.5,
+                    alpha=0.85)
     ax.set_title(title, fontsize=9.5, weight="bold")
     ax.tick_params(labelsize=8)
     ax.locator_params(nbins=5)
@@ -149,11 +185,11 @@ def plot_scatter_subplots(df, **kwargs):
         ax.tick_params(labelsize=8)
         ax.locator_params(nbins=5)
 
-    #scatter subplots for all days
+    # scatter subplots for all days
     c_limits = k.get('c_limits', (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max()))
     i = 0
     for col in df.columns[3:]:
-        #check if value is below a certain level in mm, leave it out
+        # check if value is below a certain level in mm, leave it out
         d = df[df[col] > k['threshold']]
 
         sc = graph_scatter(a[i],
@@ -162,7 +198,8 @@ def plot_scatter_subplots(df, **kwargs):
                            col,
                            d[col],
                            c_limits,
-                           k['marker_scale'])
+                           k['marker_scale'],
+                           k['ply'])
         i += 1
     cax = fig.add_axes([0.815, 0.1, 0.025, 0.8])
     cb = fig.colorbar(sc, cax=cax)
@@ -175,7 +212,7 @@ def plot_scatter_subplots(df, **kwargs):
 
 
 def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
-    #get number of 20 subplot figures we need
+    # get number of 20 subplot figures we need
     dty = kwargs['dty']
     dty += "subdaily/{}/".format(t_step)
     for d in df_list:
@@ -187,16 +224,14 @@ def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
         num_obs = len(df.columns[startcol:])
         num_figs = num_obs/n_subplots_per_fig
 
-
         date_dir = "{}{}/".format(dty, date)
 
-        if create_ani==True:
-            create_animation(df, date_dir)
-
+        if create_ani:
+            create_animation(df, date_dir, kwargs['ply'])
 
         clims = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
 
-        #plot 20 sublots at a time
+        # plot 20 sublots at a time
         for i in range(num_figs):
             plot_df = df.iloc[:, :startcol]
             scol = startcol+n_subplots_per_fig*i
@@ -211,9 +246,9 @@ def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
             plot_scatter_subplots(p,
                                   **kwargs)
 
-        #add last storms (those above the last divisible by 20 storms)
-        if num_obs%20 != 0:
-            plot_df = df.iloc[:,:startcol]
+        # add last storms (those above the last divisible by 20 storms)
+        if num_obs % 20 != 0:
+            plot_df = df.iloc[:, :startcol]
             scol = startcol+n_subplots_per_fig*num_figs
             p = plot_df.join(df.iloc[:, scol:])
             t0 = p.columns[startcol].replace(":", ".")
@@ -226,23 +261,31 @@ def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
                                   **kwargs)
 
 
-def create_animation(df, dty):
-
-    #set up writer
+def create_animation(df, dty, ply):
+    # set up writer
     Writer = animation.FFMpegWriter()
 
-    #set up figure
+    # set up figure
     startcol = 3
     num_obs = len(df.columns[startcol:])
     fig = plt.figure()
+    ax = plt.gca()
+    ax.add_patch(PolygonPatch(ply, fc='lightgrey', ec='grey', alpha=0.3))
+    ax.axis([3700, 3730, 1050, 1070])
     clims = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
     l = []
 
-    #create animation panels
+    # create animation panels
     for i in range(num_obs):
         scale = df.iloc[:, startcol+i]
         marker_scale = 12
-        p = plt.scatter(df.x/1000, df.y/1000, c=scale, cmap='Blues', s=scale*marker_scale, vmin=clims[0], vmax=clims[1])
+        p = plt.scatter(df.x/1000,
+                        df.y/1000,
+                        c=scale,
+                        cmap='Blues',
+                        s=scale*marker_scale+1,
+                        vmin=clims[0],
+                        vmax=clims[1])
 
         date_and_time = df.columns[i+3]
         space_loc = date_and_time.find(' ')
@@ -261,9 +304,9 @@ def create_animation(df, dty):
     # plt.show()
 
 
-#######################################################################
-# Data aggregation type functions ####################################
-#######################################################################
+########################################################################################################################
+# Data aggregation type functions ######################################################################################
+########################################################################################################################
 
 def get_daily_aggregate(df, date, time_step):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
@@ -291,7 +334,7 @@ def get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
         print "getting subdaily values for {}".format(date)
         df_date = df[date]
 
-        #get duration
+        # get duration
         e = dur_df["end_time"][date]
         s = dur_df["start_time"][date]
         if time_step == "H":
@@ -301,18 +344,18 @@ def get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
         for t in time_range:
             time_range_formatted.append(t._repr_base)
 
-        #aggregate by 15 mins
+        # aggregate by 15 mins
         df_gp = df_date.groupby(['x', 'y', 'site_name', 'src'])
         df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
         df_agg = df_agg.reset_index()
         df_agg = df_agg.set_index("datetime")
 
-        #sum for each time step in duration
+        # sum for each time step in duration
         for time in time_range_formatted:
             t = get_daily_aggregate(df_agg, time, time_step)
             t = t.sum(level="site_name") #todo: add code to this so we can look at different time intervals (hourly, 15 min)
 
-            #add to summary dataframe
+            # add to summary dataframe
             t.rename(columns={'precip_mm': time}, inplace=True)
             sdf = sdf.join(t[time])
         l.append((date, sdf))
@@ -324,7 +367,9 @@ def get_storm_durations(df, date_range, trim_percent):
     for date in date_range:
         df_agg = get_daily_aggregate(df, date, "15T")
         time_sums = df_agg.sum(level="datetime")
-        trimmed_indices = time_sums[(time_sums['precip_mm']>trim_percent) & (time_sums['precip_mm']<(1-trim_percent))].index
+        cum_percent = time_sums.cumsum()/time_sums.sum()
+        trimmed_indices = \
+            cum_percent[(cum_percent['precip_mm']>trim_percent) & (cum_percent['precip_mm']<(1-trim_percent))].index
         start_time = trimmed_indices.min()
         end_time = trimmed_indices.max()
         duration = (end_time-start_time).total_seconds()/3600
@@ -345,7 +390,7 @@ def get_daily_max_intensities(summary_df, df, date_range, time_step):
         else:
             df_agg = df_agg.max(level="site_name")
 
-        #add to summary dataframe
+        # add to summary dataframe
         df_agg.rename(columns={'precip_mm': date}, inplace=True)
         summary_df = summary_df.join(df_agg[date])
     return summary_df
@@ -360,7 +405,7 @@ def create_summary_table(dur_df, summ_df, mdih, mdif, dty, file_name):
     overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_15min_intensity (mm/15 min)': mdif.mean()}))
     overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_15min_intensity (mm/15 min)': mdif.max()}))
 
-    #write to csv file ##
+    # write to csv file ##
     overall_summary_df_by_date.to_csv("{}{}.csv".format(check_dir(dty), file_name))
 
 
@@ -378,6 +423,9 @@ def check_dir(d):
     return d
 
 
+########################################################################################################################
+# Prepare Data##########################################################################################################
+########################################################################################################################
 
 hrsd_stations_in_study_area = ["MMPS-171",
                                "MMPS-185",
@@ -418,7 +466,6 @@ date_range = [
 
 date_range = reformat_dates(date_range)
 
-
 # prepare the data by pulling from the database and making the datetime the index
 df = get_data_frame_from_table('vabeach_reformat_mm')
 df['datetime'] = pd.to_datetime(df['datetime'])
@@ -431,54 +478,78 @@ hrsd_df = df.set_index('datetime')
 hrsd_df.insert(len(hrsd_df.columns), 'src', 'hrsd')
 hrsd_df = hrsd_df[hrsd_df.site_name.str.rstrip().isin(hrsd_stations_in_study_area)]
 
-# df = get_data_frame_from_table('wu_inc')
-# df['datetime'] = pd.to_datetime(df['datetime'])
-# wu_df = df.set_index('datetime')
-# wu_df.insert(len(wu_df.columns), 'src', 'wu')
-# wu_df.drop('site_name', axis=1, inplace=True)
-# wu_df.rename(columns={'site_code':'site_name'}, inplace=True)
+df = get_data_frame_from_table('wu_inc')
+df['datetime'] = pd.to_datetime(df['datetime'])
+wu_df = df.set_index('datetime')
+wu_df.insert(len(wu_df.columns), 'src', 'wu')
+wu_df.drop('site_name', axis=1, inplace=True)
+wu_df.rename(columns={'site_code': 'site_name'}, inplace=True)
 
 df_list = [hrsd_df, vab_df]
 
-#combine the dfs in the list together
+# combine the dfs in the list together
 combined_df = pd.DataFrame()
 for df in df_list:
     combined_df = combined_df.append(df)
 
-#create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
-empty_daily_tots_df = combined_df.loc[:,['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
+# create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
+empty_daily_tots_df = combined_df.loc[:, ['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
 
-flavor = 'no_wu_hrsd_qc'
+flavor = 'no_wu'
 base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
 fig_dir = '{}figures/python/{}/'.format(base_dir, flavor)
 data_dir = '{}data/{}/'.format(base_dir, flavor)
 
+# read in shapefile for city outline
+d = "C:\\Users\\jeff_dsktp\\Google Drive\\Hampton Roads GIS Data\\VA_Beach_Data\\city_boundary\\vab_boundary_prj_m.shp"
+ps = shapefile.Reader(d)
+outline_poly = ps.iterShapes().next().__geo_interface__
+
+t = ()
+for i in range(len(outline_poly['coordinates'][0])):
+    if outline_poly is not None:
+        t += ((outline_poly['coordinates'][0][i][0]/1000, outline_poly['coordinates'][0][i][1]/1000),)
+t = ((t),)
+outline_poly['coordinates'] = t
+
+########################################################################################################################
+# Plot/summarize data ##################################################################################################
+########################################################################################################################
 
 # get daily summary ##
 daily_tots_df = get_daily_tots_df(empty_daily_tots_df, combined_df, date_range, "D")
-
-# get storm durations ##
-durations = get_storm_durations(combined_df, date_range, 0.05)
-
-# get subdaily summary ##
-timestep = "H"
-t = get_subdaily_df(empty_daily_tots_df, combined_df, date_range, durations, timestep)
-
-# plot subdaily data ##
-plot_subdaily_scatter(t, True, timestep, units="Precip (mm)", type="subdaily", dty=fig_dir, marker_scale=8, threshold=-1)
 #
-# for d in t:
-#     d[1].to_csv("{}{}_{}.csv".format(check_dir(data_dir), timestep, d[0]))
-
-# plot daily data ##
+# # get storm durations ##
+durations = get_storm_durations(combined_df, date_range, 0.025)
+#
+# # get subdaily summary ##
+timestep = "15T"
+t = get_subdaily_df(empty_daily_tots_df, combined_df, date_range, durations, timestep)
+#
+# # plot subdaily data ##
+plot_subdaily_scatter(t,
+                      True,
+                      timestep,
+                      units="Precip (mm)",
+                      type="subdaily",
+                      dty=fig_dir,
+                      marker_scale=5,
+                      threshold=-1,
+                      ply=outline_poly)
+# #
+# # for d in t:
+# #     d[1].to_csv("{}{}_{}.csv".format(check_dir(data_dir), timestep, d[0]))
+#
+# # plot daily data ##
 plot_scatter_subplots(daily_tots_df,
                       units="Total cummulative precip (mm)",
                       type=flavor,
                       dty=fig_dir,
                       title="total_cummulative_precip",
                       marker_scale=1,
-                      threshold=1)
-
+                      threshold=1,
+                      ply=outline_poly)
+#
 # get and plot intensity data at 15 min step ##
 max_daily_intensities_fifteen = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "15T")
 plot_scatter_subplots(max_daily_intensities_fifteen,
@@ -487,7 +558,8 @@ plot_scatter_subplots(max_daily_intensities_fifteen,
                       dty=fig_dir,
                       title="max_daily_intensities_15_min",
                       marker_scale=1.3,
-                      threshold=1)
+                      threshold=1,
+                      ply=outline_poly)
 
 # get and plot intensity data at hour step ##
 max_daily_intensities_hour = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "H")
@@ -497,15 +569,16 @@ plot_scatter_subplots(max_daily_intensities_hour,
                       dty=fig_dir,
                       title="max_daily_intensities_hour",
                       marker_scale=1.1,
-                      threshold=1)
+                      threshold=1,
+                      ply=outline_poly)
 
 
 # plot summary scatter + bars ##
-plot_sum_by_station_bars(daily_tots_df, fig_dir, flavor)
+plot_sum_by_station_bars(daily_tots_df, fig_dir, flavor, outline_poly)
 
 # bar graph for mean rainfall for each day ##
 plot_sum_by_day(daily_tots_df, fig_dir, flavor)
-
+#
 # compile overall storm summary table ##
 create_summary_table(durations,
                      daily_tots_df,
