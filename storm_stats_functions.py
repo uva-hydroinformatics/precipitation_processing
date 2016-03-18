@@ -64,6 +64,92 @@ def make_incremental(df, date_range):
     return newdf
 
 
+def combine_data_frames():
+    hrsd_stations_in_study_area = ["MMPS-171",
+                               "MMPS-185",
+                               "MMPS-163",
+                               "MMPS-255",
+                               "MMPS-146",
+                               "MMPS-004",
+                               "MMPS-256",
+                               "MMPS-140",
+                               "MMPS-160",
+                               "MMPS-144",
+                               "MMPS-036",
+                               "MMPS-093-2"]
+
+    # prepare the data by pulling from the database and making the datetime the index
+    df = get_data_frame_from_table('vabeach_reformat_mm')
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    vab_df = df.set_index('datetime')
+    vab_df.insert(len(vab_df.columns), 'src', 'vab')
+
+    df = get_data_frame_from_table('hrsd_qcd_spatial')
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    hrsd_df = df.set_index('datetime')
+    hrsd_df.insert(len(hrsd_df.columns), 'src', 'hrsd')
+    hrsd_df = hrsd_df[hrsd_df.site_name.str.rstrip().isin(hrsd_stations_in_study_area)]
+
+    df = get_data_frame_from_table('wu_inc')
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    wu_df = df.set_index('datetime')
+    wu_df.insert(len(wu_df.columns), 'src', 'wu')
+    wu_df.drop('site_name', axis=1, inplace=True)
+    wu_df.rename(columns={'site_code': 'site_name'}, inplace=True)
+
+    df_list = [wu_df, hrsd_df, vab_df]
+
+    # combine the dfs in the list together
+    c_df = pd.DataFrame()
+    for df in df_list:
+        c_df = c_df.append(df)
+
+    return c_df
+
+
+def get_date_range():
+    dr = [
+                  20130702,
+                  20131009,
+                  20140111,
+                  20140213,
+                  20140415,
+                  20140425,
+                  20140710,
+                  20140818,
+                  20140908,
+                  20140909,
+                  20140913,
+                  20141126,
+                  20141224,
+                  20150414,
+                  20150602,
+                  20150624,
+                  20150807,
+                  20150820,
+                  20150930,
+                  20151002
+                  ]
+
+    dr = reformat_dates(dr)
+    return dr
+
+
+def get_outline_polygon():
+    # read in shapefile for city outline
+    d = "C:\\Users\\jeff_dsktp\\Google Drive\\" \
+        "Hampton Roads GIS Data\\VA_Beach_Data\\city_boundary\\vab_boundary_prj_m.shp"
+    ps = shapefile.Reader(d)
+    outline_poly = ps.iterShapes().next().__geo_interface__
+
+    t = ()
+    for i in range(len(outline_poly['coordinates'][0])):
+        if outline_poly is not None:
+            t += ((outline_poly['coordinates'][0][i][0]/1000, outline_poly['coordinates'][0][i][1]/1000),)
+    t = ((t),)
+    outline_poly['coordinates'] = t
+    return outline_poly
+
 ########################################################################################################################
 # Plotting functions ###################################################################################################
 ########################################################################################################################
@@ -307,6 +393,11 @@ def create_animation(df, dty, ply):
 ########################################################################################################################
 # Data aggregation type functions ######################################################################################
 ########################################################################################################################
+def get_empty_sum_df(c_df):
+    # create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
+    empty_daily_tots_df = c_df.loc[:, ['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
+    return empty_daily_tots_df
+
 
 def get_daily_aggregate(df, date, time_step):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
@@ -316,10 +407,11 @@ def get_daily_aggregate(df, date, time_step):
     return df_agg
 
 
-def get_daily_tots_df(summary_df, df, date_range, time_step):
+def get_daily_tots_df(df, date_range):
+    summary_df = get_empty_sum_df(df)
     for date in date_range:
-        daily_tot = get_daily_aggregate(df, date, time_step)
-        daily_tot = daily_tot.sum(level="site_name") #todo: add code to this so we can look at different time intervals (hourly, 15 min)
+        daily_tot = get_daily_aggregate(df, date, "D")
+        daily_tot = daily_tot.sum(level="site_name")
 
         #add to summary dataframe
         daily_tot.rename(columns={'precip_mm': date}, inplace=True)
@@ -327,7 +419,8 @@ def get_daily_tots_df(summary_df, df, date_range, time_step):
     return summary_df
 
 
-def get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
+def get_subdaily_df(df, date_range, dur_df, time_step):
+    summary_df = get_empty_sum_df(df)
     l = []
     for date in date_range:
         sdf = summary_df
@@ -353,7 +446,7 @@ def get_subdaily_df(summary_df, df, date_range, dur_df, time_step):
         # sum for each time step in duration
         for time in time_range_formatted:
             t = get_daily_aggregate(df_agg, time, time_step)
-            t = t.sum(level="site_name") #todo: add code to this so we can look at different time intervals (hourly, 15 min)
+            t = t.sum(level="site_name")
 
             # add to summary dataframe
             t.rename(columns={'precip_mm': time}, inplace=True)
@@ -382,7 +475,8 @@ def get_storm_durations(df, date_range, trim_percent):
     return dur_df
 
 
-def get_daily_max_intensities(summary_df, df, date_range, time_step):
+def get_daily_max_intensities(df, date_range, time_step):
+    summary_df = get_empty_sum_df(df)
     for date in date_range:
         df_agg = get_daily_aggregate(df, date, "15T")
         if time_step == 'H':
@@ -423,166 +517,3 @@ def check_dir(d):
     return d
 
 
-########################################################################################################################
-# Prepare Data##########################################################################################################
-########################################################################################################################
-
-hrsd_stations_in_study_area = ["MMPS-171",
-                               "MMPS-185",
-                               "MMPS-163",
-                               "MMPS-255",
-                               "MMPS-146",
-                               "MMPS-004",
-                               "MMPS-256",
-                               "MMPS-140",
-                               "MMPS-160",
-                               "MMPS-144",
-                               "MMPS-036",
-                               "MMPS-093-2"]
-
-
-date_range = [
-              20130702,
-              20131009,
-              20140111,
-              20140213,
-              20140415,
-              20140425,
-              20140710,
-              20140818,
-              20140908,
-              20140909,
-              20140913,
-              20141126,
-              20141224,
-              20150414,
-              20150602,
-              20150624,
-              20150807,
-              20150820,
-              20150930,
-              20151002
-              ]
-
-date_range = reformat_dates(date_range)
-
-# prepare the data by pulling from the database and making the datetime the index
-df = get_data_frame_from_table('vabeach_reformat_mm')
-df['datetime'] = pd.to_datetime(df['datetime'])
-vab_df = df.set_index('datetime')
-vab_df.insert(len(vab_df.columns), 'src', 'vab')
-
-df = get_data_frame_from_table('hrsd_qcd_spatial')
-df['datetime'] = pd.to_datetime(df['datetime'])
-hrsd_df = df.set_index('datetime')
-hrsd_df.insert(len(hrsd_df.columns), 'src', 'hrsd')
-hrsd_df = hrsd_df[hrsd_df.site_name.str.rstrip().isin(hrsd_stations_in_study_area)]
-
-df = get_data_frame_from_table('wu_inc')
-df['datetime'] = pd.to_datetime(df['datetime'])
-wu_df = df.set_index('datetime')
-wu_df.insert(len(wu_df.columns), 'src', 'wu')
-wu_df.drop('site_name', axis=1, inplace=True)
-wu_df.rename(columns={'site_code': 'site_name'}, inplace=True)
-
-df_list = [hrsd_df, vab_df]
-
-# combine the dfs in the list together
-combined_df = pd.DataFrame()
-for df in df_list:
-    combined_df = combined_df.append(df)
-
-# create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
-empty_daily_tots_df = combined_df.loc[:, ['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
-
-flavor = 'no_wu'
-base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
-fig_dir = '{}figures/python/{}/'.format(base_dir, flavor)
-data_dir = '{}data/{}/'.format(base_dir, flavor)
-
-# read in shapefile for city outline
-d = "C:\\Users\\jeff_dsktp\\Google Drive\\Hampton Roads GIS Data\\VA_Beach_Data\\city_boundary\\vab_boundary_prj_m.shp"
-ps = shapefile.Reader(d)
-outline_poly = ps.iterShapes().next().__geo_interface__
-
-t = ()
-for i in range(len(outline_poly['coordinates'][0])):
-    if outline_poly is not None:
-        t += ((outline_poly['coordinates'][0][i][0]/1000, outline_poly['coordinates'][0][i][1]/1000),)
-t = ((t),)
-outline_poly['coordinates'] = t
-
-########################################################################################################################
-# Plot/summarize data ##################################################################################################
-########################################################################################################################
-
-# get daily summary ##
-daily_tots_df = get_daily_tots_df(empty_daily_tots_df, combined_df, date_range, "D")
-#
-# # get storm durations ##
-durations = get_storm_durations(combined_df, date_range, 0.025)
-#
-# # get subdaily summary ##
-timestep = "15T"
-t = get_subdaily_df(empty_daily_tots_df, combined_df, date_range, durations, timestep)
-#
-# # plot subdaily data ##
-plot_subdaily_scatter(t,
-                      True,
-                      timestep,
-                      units="Precip (mm)",
-                      type="subdaily",
-                      dty=fig_dir,
-                      marker_scale=5,
-                      threshold=-1,
-                      ply=outline_poly)
-# #
-# # for d in t:
-# #     d[1].to_csv("{}{}_{}.csv".format(check_dir(data_dir), timestep, d[0]))
-#
-# # plot daily data ##
-plot_scatter_subplots(daily_tots_df,
-                      units="Total cummulative precip (mm)",
-                      type=flavor,
-                      dty=fig_dir,
-                      title="total_cummulative_precip",
-                      marker_scale=1,
-                      threshold=1,
-                      ply=outline_poly)
-#
-# get and plot intensity data at 15 min step ##
-max_daily_intensities_fifteen = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "15T")
-plot_scatter_subplots(max_daily_intensities_fifteen,
-                      units="Max daily intensity (mm/15 min)",
-                      type=flavor,
-                      dty=fig_dir,
-                      title="max_daily_intensities_15_min",
-                      marker_scale=1.3,
-                      threshold=1,
-                      ply=outline_poly)
-
-# get and plot intensity data at hour step ##
-max_daily_intensities_hour = get_daily_max_intensities(empty_daily_tots_df, combined_df, date_range, "H")
-plot_scatter_subplots(max_daily_intensities_hour,
-                      units="Max daily intensity (mm/hour)",
-                      type=flavor,
-                      dty=fig_dir,
-                      title="max_daily_intensities_hour",
-                      marker_scale=1.1,
-                      threshold=1,
-                      ply=outline_poly)
-
-
-# plot summary scatter + bars ##
-plot_sum_by_station_bars(daily_tots_df, fig_dir, flavor, outline_poly)
-
-# bar graph for mean rainfall for each day ##
-plot_sum_by_day(daily_tots_df, fig_dir, flavor)
-#
-# compile overall storm summary table ##
-create_summary_table(durations,
-                     daily_tots_df,
-                     max_daily_intensities_hour,
-                     max_daily_intensities_fifteen,
-                     data_dir,
-                     "overall_storm_summary")
