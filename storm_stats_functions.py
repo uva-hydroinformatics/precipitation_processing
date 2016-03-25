@@ -14,7 +14,8 @@ from descartes import PolygonPatch
 import shapefile
 
 plt.rcParams['animation.ffmpeg_path'] = \
-    'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static\\ffmpeg-20160301-git-1c7e2cf-win64-static\\bin\\ffmpeg'
+    'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static' \
+    '\\ffmpeg-20160301-git-1c7e2cf-win64-static\\bin\\ffmpeg'
 
 ########################################################################################################################
 # Data preparation functions ###########################################################################################
@@ -24,15 +25,16 @@ plt.rcParams['animation.ffmpeg_path'] = \
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
     # set up db connection
-    MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb"; DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
+    MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb";
+    DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
 
     # connect to db
-    con = pyodbc.connect('DRIVER={};DBQ={};PWD={}'.format(DRV,MDB,PWD))
+    con = pyodbc.connect('DRIVER={};DBQ={};PWD={}'.format(DRV, MDB, PWD))
     cur = con.cursor()
 
     # run a query and get the results
-    SQL = 'SELECT * FROM {};'.format(table_name) # your query goes here
-    rows = cur.execute(SQL).fetchall()
+    sql = 'SELECT * FROM {};'.format(table_name)  # your query goes here
+    rows = cur.execute(sql).fetchall()
     a = np.array(rows)
     df = pd.DataFrame(a, columns=[i[0] for i in cur.description])
     cur.close()
@@ -66,17 +68,17 @@ def make_incremental(df, date_range):
 
 def combine_data_frames():
     hrsd_stations_in_study_area = ["MMPS-171",
-                               "MMPS-185",
-                               "MMPS-163",
-                               "MMPS-255",
-                               "MMPS-146",
-                               "MMPS-004",
-                               "MMPS-256",
-                               "MMPS-140",
-                               "MMPS-160",
-                               "MMPS-144",
-                               "MMPS-036",
-                               "MMPS-093-2"]
+                                   "MMPS-185",
+                                   "MMPS-163",
+                                   "MMPS-255",
+                                   "MMPS-146",
+                                   "MMPS-004",
+                                   "MMPS-256",
+                                   "MMPS-140",
+                                   "MMPS-160",
+                                   "MMPS-144",
+                                   "MMPS-036",
+                                   "MMPS-093-2"]
 
     # prepare the data by pulling from the database and making the datetime the index
     df = get_data_frame_from_table('vabeach_reformat_mm')
@@ -183,7 +185,7 @@ def plot_sum_by_station_bars(summ_df, f_dir, flav, ply):
     fig, ax = plt.subplots(1, 2, figsize=(10, 6))
 
     # bars for overall sum by station##
-    sum_by_station = summ_df.iloc[:,3:].mean(axis=1)
+    sum_by_station = summ_df.iloc[:, 3:].mean(axis=1)
     barX = np.arange(len(sum_by_station))
     graph_bars(ax[0],
                barX,
@@ -199,6 +201,7 @@ def plot_sum_by_station_bars(summ_df, f_dir, flav, ply):
     graph_scatter(ax[1],
                   summ_df.x/1000,
                   summ_df.y/1000,
+                  summ_df.index,
                   title="",
                   scale=sum_by_station,
                   c_limits=(sum_by_station.min(),
@@ -239,7 +242,7 @@ def plot_sum_by_day(summ_df, f_dir, flav):
     plt.savefig('{}{}_{}.png'.format(check_dir(f_dir), "overall_summary_by_date", flav))
 
 
-def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale, ply):
+def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply):
     ax.add_patch(PolygonPatch(ply, fc='lightgrey', ec='grey', alpha=0.3))
     ax.axis([3700, 3730, 1050, 1070])
     print ("graphing scatter for {}".format(title))
@@ -252,6 +255,13 @@ def graph_scatter(ax, x, y, title, scale, c_limits, marker_scale, ply):
                     vmax=c_limits[1],
                     linewidth=0.5,
                     alpha=0.85)
+    for i in range(len(x)):
+        ax.annotate(sites[i],
+                    (x[i], y[i]),
+                    xytext=(1, 1),
+                    textcoords='offset points',
+                    fontsize=2
+                    )
     ax.set_title(title, fontsize=9.5, weight="bold")
     ax.tick_params(labelsize=8)
     ax.locator_params(nbins=5)
@@ -262,10 +272,10 @@ def plot_scatter_subplots(df, **kwargs):
     k = kwargs
     num_cols = len(df.columns[3:])
     if num_cols<2:
-        fig, a = plt.subplots(1, figsize=(10,10), sharex=True, sharey = True)
+        fig, a = plt.subplots(1, figsize=(10, 10), sharex=True, sharey=True)
         a = [a]
     else:
-        fig, a = plt.subplots(5, 4, sharex=True, sharey = True, figsize=(10,10))
+        fig, a = plt.subplots(5, 4, sharex=True, sharey=True, figsize=(10, 10))
         a = a.ravel()
     for ax in a:
         ax.tick_params(labelsize=8)
@@ -281,6 +291,7 @@ def plot_scatter_subplots(df, **kwargs):
         sc = graph_scatter(a[i],
                            d.x/1000,
                            d.y/1000,
+                           d.index,
                            col,
                            d[col],
                            c_limits,
@@ -393,7 +404,7 @@ def create_animation(df, dty, ply):
 ########################################################################################################################
 # Data aggregation type functions ######################################################################################
 ########################################################################################################################
-def get_empty_sum_df(c_df):
+def get_empty_summary_df(c_df):
     # create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
     empty_daily_tots_df = c_df.loc[:, ['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
     return empty_daily_tots_df
@@ -408,7 +419,7 @@ def get_daily_aggregate(df, date, time_step):
 
 
 def get_daily_tots_df(df, date_range):
-    summary_df = get_empty_sum_df(df)
+    summary_df = get_empty_summary_df(df)
     for date in date_range:
         daily_tot = get_daily_aggregate(df, date, "D")
         daily_tot = daily_tot.sum(level="site_name")
@@ -419,8 +430,9 @@ def get_daily_tots_df(df, date_range):
     return summary_df
 
 
-def get_subdaily_df(df, date_range, dur_df, time_step):
-    summary_df = get_empty_sum_df(df)
+def get_subdaily_df(df, date_range, time_step):
+    dur_df = get_storm_durations(df, date_range, 0.025)
+    summary_df = get_empty_summary_df(df)
     l = []
     for date in date_range:
         sdf = summary_df
@@ -455,6 +467,13 @@ def get_subdaily_df(df, date_range, dur_df, time_step):
     return l
 
 
+def combine_sub_daily_dfs(comb_df, df_list):
+    summ_df = get_empty_summary_df(comb_df)
+    for df in df_list:
+        summ_df = summ_df.join(df[1].ix[:,3:])
+    return summ_df
+
+
 def get_storm_durations(df, date_range, trim_percent):
     i = 0
     for date in date_range:
@@ -476,7 +495,7 @@ def get_storm_durations(df, date_range, trim_percent):
 
 
 def get_daily_max_intensities(df, date_range, time_step):
-    summary_df = get_empty_sum_df(df)
+    summary_df = get_empty_summary_df(df)
     for date in date_range:
         df_agg = get_daily_aggregate(df, date, "15T")
         if time_step == 'H':
@@ -490,7 +509,8 @@ def get_daily_max_intensities(df, date_range, time_step):
     return summary_df
 
 
-def create_summary_table(dur_df, summ_df, mdih, mdif, dty, file_name):
+def create_summary_table(summ_df, mdih, mdif, dty, file_name):
+    dur_df = get_storm_durations(summ_df, get_date_range(), 0.025)
     overall_summary_df_by_date = dur_df.join(pd.DataFrame({'mean_total_rainfall_volume (mm)': summ_df.mean()}))
     overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'st. dev (mm)': summ_df.std()}))
     overall_summary_df_by_date['average_intensity (mm/hr)'] = overall_summary_df_by_date['mean_total_rainfall_volume (mm)']/overall_summary_df_by_date['duration (hr)']

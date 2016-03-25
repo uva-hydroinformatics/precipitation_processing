@@ -16,6 +16,7 @@ data_dir = '{}data/{}/'.format(base_dir, flavor)
 ########################################################################################################################
 # Plot/summarize data ##################################################################################################
 ########################################################################################################################
+date_range = date_range
 
 # get daily summary ##
 daily_tots_df = get_daily_tots_df(combined_df, date_range)
@@ -25,8 +26,12 @@ durations = get_storm_durations(combined_df, date_range, 0.025)
 #
 # get subdaily summary ##
 timestep = "15T"
-t = get_subdaily_df(combined_df, date_range, durations, timestep)
+t = get_subdaily_df(combined_df, date_range, timestep)
+# t = combine_sub_daily_dfs(combined_df, t)
 
+daily_tots_df.to_csv("{}{}.csv".format(check_dir(data_dir), 'daily_tots'))
+for a in t:
+    a[1].to_csv("{}{}-{}.csv".format(check_dir(data_dir), a[0], 'fifteen_min'))
 # # plot subdaily data ##
 # plot_subdaily_scatter(t,
 #                       True,
@@ -81,8 +86,7 @@ t = get_subdaily_df(combined_df, date_range, durations, timestep)
 # plot_sum_by_day(daily_tots_df, fig_dir, flavor)
 
 # compile overall storm summary table ##
-# create_summary_table(durations,
-#                      daily_tots_df,
+# create_summary_table(daily_tots_df,
 #                      max_daily_intensities_hour,
 #                      max_daily_intensities_fifteen,
 #                      data_dir,
