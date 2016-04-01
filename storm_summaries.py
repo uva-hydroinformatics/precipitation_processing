@@ -16,7 +16,7 @@ data_dir = '{}data/{}/'.format(base_dir, flavor)
 ########################################################################################################################
 # Plot/summarize data ##################################################################################################
 ########################################################################################################################
-date_range = date_range
+date_range = [date_range[6]]
 
 # get daily summary ##
 daily_tots_df = get_daily_tots_df(combined_df, date_range)
@@ -29,19 +29,18 @@ timestep = "15T"
 t = get_subdaily_df(combined_df, date_range, timestep)
 # t = combine_sub_daily_dfs(combined_df, t)
 
-daily_tots_df.to_csv("{}{}.csv".format(check_dir(data_dir), 'daily_tots'))
-for a in t:
-    a[1].to_csv("{}{}-{}.csv".format(check_dir(data_dir), a[0], 'fifteen_min'))
-# # plot subdaily data ##
-# plot_subdaily_scatter(t,
-#                       True,
-#                       timestep,
-#                       units="Precip (mm)",
-#                       type="subdaily",
-#                       dty=fig_dir,
-#                       marker_scale=5,
-#                       threshold=-1,
-#                       ply=outline_poly)
+# for a in t:
+#     a[1].to_csv("{}{}-{}.csv".format(check_dir(data_dir), a[0], 'fifteen_min'))
+# plot subdaily data ##
+plot_subdaily_scatter(t,
+                      False,
+                      timestep,
+                      units="Precip (mm)",
+                      type="subdaily",
+                      dty=fig_dir,
+                      marker_scale=5,
+                      threshold=-1,
+                      ply=outline_poly)
 # #
 # # for d in t:
 # #     d[1].to_csv("{}{}_{}.csv".format(check_dir(data_dir), timestep, d[0]))

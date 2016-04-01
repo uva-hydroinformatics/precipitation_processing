@@ -152,6 +152,26 @@ def get_outline_polygon():
     outline_poly['coordinates'] = t
     return outline_poly
 
+
+def read_sub_daily(table_name):
+    e = get_empty_summary_df()
+    sd = get_data_frame_from_table(table_name)
+    sd = sd.set_index('datetime')
+    sd = sd.T
+    sd = e.join(sd)
+    for col in sd.columns[3:]:
+        sd[col] = pd.to_numeric(sd[col])
+    return sd
+
+def qc_wu(df):
+    df = df.reset_index()
+    bad_sites = ['KVAVIRGI52', 'KVAVIRGI50']
+    for bs in bad_sites:
+        df = df[df['site_name'] != bs]
+    df = df.set_index('site_name')
+    return df
+
+
 ########################################################################################################################
 # Plotting functions ###################################################################################################
 ########################################################################################################################
@@ -404,9 +424,12 @@ def create_animation(df, dty, ply):
 ########################################################################################################################
 # Data aggregation type functions ######################################################################################
 ########################################################################################################################
-def get_empty_summary_df(c_df):
+def get_empty_summary_df():
     # create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
-    empty_daily_tots_df = c_df.loc[:, ['site_name', 'x', 'y', 'src']].set_index('site_name').drop_duplicates()
+    empty_daily_tots_df = get_data_frame_from_table('sites_list')
+    empty_daily_tots_df = empty_daily_tots_df.set_index('site_name')
+    empty_daily_tots_df['x'] = pd.to_numeric(empty_daily_tots_df['x'])
+    empty_daily_tots_df['y'] = pd.to_numeric(empty_daily_tots_df['y'])
     return empty_daily_tots_df
 
 
@@ -419,7 +442,7 @@ def get_daily_aggregate(df, date, time_step):
 
 
 def get_daily_tots_df(df, date_range):
-    summary_df = get_empty_summary_df(df)
+    summary_df = get_empty_summary_df()
     for date in date_range:
         daily_tot = get_daily_aggregate(df, date, "D")
         daily_tot = daily_tot.sum(level="site_name")
@@ -432,7 +455,7 @@ def get_daily_tots_df(df, date_range):
 
 def get_subdaily_df(df, date_range, time_step):
     dur_df = get_storm_durations(df, date_range, 0.025)
-    summary_df = get_empty_summary_df(df)
+    summary_df = get_empty_summary_df()
     l = []
     for date in date_range:
         sdf = summary_df
@@ -467,8 +490,8 @@ def get_subdaily_df(df, date_range, time_step):
     return l
 
 
-def combine_sub_daily_dfs(comb_df, df_list):
-    summ_df = get_empty_summary_df(comb_df)
+def combine_sub_daily_dfs(df_list):
+    summ_df = get_empty_summary_df()
     for df in df_list:
         summ_df = summ_df.join(df[1].ix[:,3:])
     return summ_df
@@ -495,7 +518,7 @@ def get_storm_durations(df, date_range, trim_percent):
 
 
 def get_daily_max_intensities(df, date_range, time_step):
-    summary_df = get_empty_summary_df(df)
+    summary_df = get_empty_summary_df()
     for date in date_range:
         df_agg = get_daily_aggregate(df, date, "15T")
         if time_step == 'H':
