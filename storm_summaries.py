@@ -16,7 +16,7 @@ data_dir = '{}data/{}/'.format(base_dir, flavor)
 ########################################################################################################################
 # Plot/summarize data ##################################################################################################
 ########################################################################################################################
-date_range = [date_range[6]]
+date_range = ['2014-07-10']
 
 # get daily summary ##
 daily_tots_df = get_daily_tots_df(combined_df, date_range)
@@ -40,7 +40,8 @@ plot_subdaily_scatter(t,
                       dty=fig_dir,
                       marker_scale=5,
                       threshold=-1,
-                      ply=outline_poly)
+                      ply=outline_poly,
+                      label=True)
 # #
 # # for d in t:
 # #     d[1].to_csv("{}{}_{}.csv".format(check_dir(data_dir), timestep, d[0]))

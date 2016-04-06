@@ -165,7 +165,8 @@ def read_sub_daily(table_name):
 
 def qc_wu(df):
     df = df.reset_index()
-    bad_sites = ['KVAVIRGI52', 'KVAVIRGI50']
+    bad_sites = ['KVAVIRGI52', 'KVAVIRGI50', 'KVAVIRGI112', 'KVAVIRGI126', 'KVAVIRGI129', 'KVAVIRGI117', 'KVAVIRGI122',
+                 'KVAVIRGI147', 'KVAVIRGI137']
     for bs in bad_sites:
         df = df[df['site_name'] != bs]
     df = df.set_index('site_name')
@@ -227,7 +228,8 @@ def plot_sum_by_station_bars(summ_df, f_dir, flav, ply):
                   c_limits=(sum_by_station.min(),
                             sum_by_station.max()),
                   marker_scale=2.6,
-                  ply = ply)
+                  ply=ply,
+                  label=True)
     fig.suptitle("Summary by station")
     plt.tight_layout()
     plt.savefig("{}{}_{}.png".format(check_dir(f_dir), "overall_summary_by_station", flav), dpi=500)
@@ -262,7 +264,7 @@ def plot_sum_by_day(summ_df, f_dir, flav):
     plt.savefig('{}{}_{}.png'.format(check_dir(f_dir), "overall_summary_by_date", flav))
 
 
-def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply):
+def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply, label):
     ax.add_patch(PolygonPatch(ply, fc='lightgrey', ec='grey', alpha=0.3))
     ax.axis([3700, 3730, 1050, 1070])
     print ("graphing scatter for {}".format(title))
@@ -275,13 +277,14 @@ def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply):
                     vmax=c_limits[1],
                     linewidth=0.5,
                     alpha=0.85)
-    for i in range(len(x)):
-        ax.annotate(sites[i],
-                    (x[i], y[i]),
-                    xytext=(1, 1),
-                    textcoords='offset points',
-                    fontsize=2
-                    )
+    if label:
+        for i in range(len(x)):
+            ax.annotate(sites[i],
+                        (x[i], y[i]),
+                        xytext=(1, 1),
+                        textcoords='offset points',
+                        fontsize=2
+                        )
     ax.set_title(title, fontsize=9.5, weight="bold")
     ax.tick_params(labelsize=8)
     ax.locator_params(nbins=5)
@@ -316,7 +319,8 @@ def plot_scatter_subplots(df, **kwargs):
                            d[col],
                            c_limits,
                            k['marker_scale'],
-                           k['ply'])
+                           k['ply'],
+                           k.get('label', False))
         i += 1
     cax = fig.add_axes([0.815, 0.1, 0.025, 0.8])
     cb = fig.colorbar(sc, cax=cax)
