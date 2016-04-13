@@ -163,9 +163,10 @@ def read_sub_daily(table_name):
         sd[col] = pd.to_numeric(sd[col])
     return sd
 
+
 def qc_wu(df):
     df = df.reset_index()
-    bad_sites = ['KVAVIRGI52', 'KVAVIRGI50', 'KVAVIRGI112', 'KVAVIRGI126', 'KVAVIRGI129', 'KVAVIRGI117', 'KVAVIRGI122',
+    bad_sites = ['KVAVIRGI52', 'KVAVIRGI112', 'KVAVIRGI126', 'KVAVIRGI129', 'KVAVIRGI117', 'KVAVIRGI122',
                  'KVAVIRGI147', 'KVAVIRGI137']
     for bs in bad_sites:
         df = df[df['site_name'] != bs]
@@ -292,9 +293,16 @@ def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply, la
 
 
 def plot_scatter_subplots(df, **kwargs):
+    '''
+    :param df: data frame to plot with site_name as index. must include x and y attributes. data starts from column
+     index 3
+    :param kwargs: necessary kwargs: title, marker_scale, ply (outlines city), label(bool), title, units, dty (save
+     directory), and type
+    :return:void
+    '''
     k = kwargs
     num_cols = len(df.columns[3:])
-    if num_cols<2:
+    if num_cols < 2:
         fig, a = plt.subplots(1, figsize=(10, 10), sharex=True, sharey=True)
         a = [a]
     else:
@@ -445,7 +453,8 @@ def get_daily_aggregate(df, date, time_step):
     return df_agg
 
 
-def get_daily_tots_df(df, date_range):
+def get_daily_tots_df(date_range):
+    df = combine_data_frames()
     summary_df = get_empty_summary_df()
     for date in date_range:
         daily_tot = get_daily_aggregate(df, date, "D")
