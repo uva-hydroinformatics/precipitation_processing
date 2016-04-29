@@ -15,3 +15,4 @@ flood_as = [h.a.get('href') for h in flood_hs]
 for a in flood_as:
     response = requests.get(a)
     soup = bs4.BeautifulSoup(response.text, 'lxml')
+    # todo: if it's a photo thing we have to go through the thumbnails?
