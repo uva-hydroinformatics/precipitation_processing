@@ -572,4 +572,7 @@ def check_dir(d):
         os.makedirs(d)
     return d
 
+base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
+fig_dir = '{}figures/python/'.format(base_dir)
+data_dir = '{}data/'.format(base_dir)
 
