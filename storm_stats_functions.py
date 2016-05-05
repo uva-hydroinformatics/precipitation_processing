@@ -12,6 +12,7 @@ import os
 import matplotlib.animation as animation
 from descartes import PolygonPatch
 import shapefile
+import sqlite3
 
 plt.rcParams['animation.ffmpeg_path'] = \
     'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static' \
@@ -25,19 +26,14 @@ plt.rcParams['animation.ffmpeg_path'] = \
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
     # set up db connection
-    MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb";
-    DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
+    db = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/master.sqlite";
 
     # connect to db
-    con = pyodbc.connect('DRIVER={};DBQ={};PWD={}'.format(DRV, MDB, PWD))
-    cur = con.cursor()
+    con = sqlite3.connect(db)
 
     # run a query and get the results
     sql = 'SELECT * FROM {};'.format(table_name)  # your query goes here
-    rows = cur.execute(sql).fetchall()
-    a = np.array(rows)
-    df = pd.DataFrame(a, columns=[i[0] for i in cur.description])
-    cur.close()
+    df = pd.read_sql(sql, con)
     con.close()
     return df
 
@@ -81,32 +77,11 @@ def combine_data_frames():
                                    "MMPS-093-2"]
 
     # prepare the data by pulling from the database and making the datetime the index
-    df = get_data_frame_from_table('vabeach_reformat_mm')
+    df = get_data_frame_from_table('all_data')
     df['datetime'] = pd.to_datetime(df['datetime'])
-    vab_df = df.set_index('datetime')
-    vab_df.insert(len(vab_df.columns), 'src', 'vab')
+    df = df.set_index('datetime')
 
-    df = get_data_frame_from_table('hrsd_qcd_spatial')
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    hrsd_df = df.set_index('datetime')
-    hrsd_df.insert(len(hrsd_df.columns), 'src', 'hrsd')
-    hrsd_df = hrsd_df[hrsd_df.site_name.str.rstrip().isin(hrsd_stations_in_study_area)]
-
-    df = get_data_frame_from_table('wu_inc')
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    wu_df = df.set_index('datetime')
-    wu_df.insert(len(wu_df.columns), 'src', 'wu')
-    wu_df.drop('site_name', axis=1, inplace=True)
-    wu_df.rename(columns={'site_code': 'site_name'}, inplace=True)
-
-    df_list = [wu_df, hrsd_df, vab_df]
-
-    # combine the dfs in the list together
-    c_df = pd.DataFrame()
-    for df in df_list:
-        c_df = c_df.append(df)
-
-    return c_df
+    return df
 
 
 def get_date_range():
@@ -154,13 +129,8 @@ def get_outline_polygon():
 
 
 def read_sub_daily(table_name):
-    e = get_empty_summary_df()
     sd = get_data_frame_from_table(table_name)
-    sd = sd.set_index('datetime')
-    sd = sd.T
-    sd = e.join(sd)
-    for col in sd.columns[3:]:
-        sd[col] = pd.to_numeric(sd[col])
+    sd.set_index('site_name', inplace=True)
     return sd
 
 
