@@ -1,9 +1,12 @@
 library(RGeostats)
+library(XLConnect)
 
 #read in csvfile and change into rgeostats db object
-filename = "2014.09.08.csv"
+infilename = "daily_tots"
+fileext = ".xls"
 data_dir = "C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\data\\"
-rain.csv <- read.csv(file=paste(data_dir, filename, sep=""), head=TRUE, sep=",")
+rain.wb = loadWorkbook(paste(data_dir, infilename, fileext, sep=""))
+rain.csv <- readWorksheet(rain.wb, sheet = 1, header=TRUE)
 non_zero_columns = which(colSums(rain.csv[-1:-4], na.rm=T) !=0) + 4
 rain.csv = rain.csv[, c(1:4, non_zero_columns)]
 rain.filt = rain.csv[,c(2,3,non_zero_columns)]
@@ -25,11 +28,14 @@ moving.neigh <- neigh.init(ndim = 2, type = 2, nmini = 1, nmaxi = 8, nsect = 8, 
 
 model.attr = data.frame()
 l = length(rain.db@items)
-for (i in 4:l){
+#for (i in 4:l){
     rain.db <- orig.db
+    
+    i = 12
     
     col_name = colnames(rain.filt)[i-1]
     date = strsplit(col_name, "X")[[1]][2]
+    date = substring(date, 1, 10)
     
     rain.db <- db.locate(rain.db, i, "z")
     
@@ -82,7 +88,8 @@ for (i in 4:l){
     
     #clean up
     rain.db <- db.delete(rain.db, seq(l+1, l+2))
-}
+#}
+write.csv(model.attr, file = paste(data_dir, infilename, "_model_params.csv", sep=""))
 
 
 
