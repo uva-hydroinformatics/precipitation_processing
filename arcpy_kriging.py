@@ -3,6 +3,9 @@ from arcpy import env
 from arcpy.sa import *
 import pandas as pd
 from storm_stats_functions import check_dir
+import numpy as np
+
+arcpy.CheckOutExtension("spatial")
 
 # get data from csv
 data_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
@@ -46,37 +49,34 @@ krad = arcpy.sa.RadiusVariable(27, 20000)
 out_est_file = date.replace("_","")
 cell_size = "61.3231323600002"
 sample_type = "Variable"
-out_var_file = "sv09082014"
+out_var_file = "sv{}".format(date.replace("_",""))
 arcpy.gp.Kriging_sa("{}.shp".format(date.replace('_',"")),
                    "f{}".format(date[:-1]),
                    out_est_file,
-                   "{} {} {} {} {}".format(model_type, lag_size,range, sill, nugget),
+                   "{} {} {} {} {}".format(model_type, lag_size, range, sill, nugget),
                    cell_size,
                    "{} {}".format(sample_type, sample_num),
                    out_var_file)
 
-
-# Todo: make the model parameters dynamic: have R script output csv and read them in here
 # Todo: put in loop for each of the time steps
 # Todo: loop through each station removing one by one and see the effect on the rainfall estimation
 
-
-
-# todo: read in watershed shapefile then select each watershed one by one and calculate the zonal stats
 shed_ply = "C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/Problem Spots/problem_watersheds.shp"
 arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
-est_rast = "C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging/09082014_5"
 out_tab = "temp_tab"
-for i in range(1):
-    i = 1
-    arcpy.SelectLayerByAttribute_management("problem_watersheds", "NEW_SELECTION", " FID = {}".format(i+1))
-    arcpy.sa.ZonalStatisticsAsTable("problem_watersheds", "FID", est_rast, out_tab, "DATA", "MEAN")
-    cur = arcpy.da.SearchCursor(out_tab)
+means = []
+for i in np.arange(1):
+    i = 2
+    # select individual watershed
+    sel = "selection.shp"
+    arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
+    cur = arcpy.SearchCursor(sel)
     for row in cur:
-        print row[-1]
+        wshed_descr = row.getValue("Descript")
 
-
-# Todo: make the model parameters dynamic: have R script output csv and read them in here
-# Todo: put in loop for each of the time steps
-# Todo: loop through each station removing one by one and see the effect on the rainfall estimation
+    # get mean of the kriged surface of selected watershed
+    arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
+    cur = arcpy.da.SearchCursor(out_tab, "MEAN")
+    for row in cur:
+        means.append(row[0])
