@@ -6,6 +6,7 @@ from storm_stats_functions import check_dir
 import numpy as np
 
 arcpy.CheckOutExtension("spatial")
+env.extent = arcpy.Extent(3705690, 1051630, 3724920, 1068584)
 
 # get data from csv
 data_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
@@ -66,17 +67,20 @@ arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 out_tab = "temp_tab"
 means = []
-for i in np.arange(1):
-    i = 2
+for i in np.arange(num_rows):
     # select individual watershed
     sel = "selection.shp"
     arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
     cur = arcpy.SearchCursor(sel)
     for row in cur:
         wshed_descr = row.getValue("Descript")
+        wshed_area = row.getValue("Area_sq_km")
+    if wshed_area < 0.001:
+        continue
 
     # get mean of the kriged surface of selected watershed
     arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
     cur = arcpy.da.SearchCursor(out_tab, "MEAN")
     for row in cur:
         means.append(row[0])
+
