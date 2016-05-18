@@ -11,7 +11,7 @@ class ModelParams():
         param_file = "{}{}_model_params.csv".format(d_dir, tpe)
         param_df = pd.read_csv(param_file)
         param_df.set_index('date', inplace=True)
-        d = d.replace("_", ".")
+        d = d.replace("-", ".")
 
         self.model_type = param_df['type'][d]
         self.lag_size = "1000.000000"
@@ -48,7 +48,7 @@ arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 out_tab = "temp_tab"
 means = []
-for i in np.arange(num_rows):
+for i in np.arange(1):
     # select individual watershed
     sel = "selection.shp"
     arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
@@ -61,44 +61,47 @@ for i in np.arange(num_rows):
     if wshed_area < 0.001:
         continue
 
-
     # take out nearest points and resave as same name
     j = 0
 
     # convert to table then to layer then to shapefile... phew!
-    date = "2014_09_08"
-    tbl = "{}.dbf".format(date)
-    arcpy.ExcelToTable_conversion(table_path, tbl)
+    for date in [dates[0]]:
+        date_df = df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
+        date_df = date_df[date_df[date].notnull()]
+        date_table = "{}{}.xls".format(data_dir, date)
+        date_df.to_excel(date_table, index=False)
 
-    spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
-            r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
-    lyr = "{}_Layer".format(date)
-    arcpy.MakeXYEventLayer_management(tbl, 'X', 'Y', lyr, spref)
+        tbl = "tab.dbf".format(date.replace("-", ""))
 
-    shp_path = check_dir(
-        "C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/rain_gauges/{}".format(date))
-    arcpy.CopyFeatures_management(lyr, '{}.shp'.format(date.replace('_', "")))
+        arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
 
-    #  get model params
-    mp = ModelParams(tpe, data_dir, date)
+        spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
+                r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
+        lyr = "Layer".format(date)
+        arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
 
-    # do kriging
-    out_est_file = date.replace("_", "")
-    cell_size = "61.3231323600002"
-    out_var_file = "sv{}".format(date.replace("_", ""))
-    arcpy.gp.Kriging_sa("{}.shp".format(date.replace('_', "")),
-                        "f{}".format(date[:-1]),
-                        out_est_file,
-                        "{} {} {} {} {}".format(mp.model_type, mp.lag_size, mp.range, mp.sill, mp.nugget),
-                        cell_size,
-                        "{} {}".format(mp.sample_type, mp.sample_num),
-                        out_var_file)
+        arcpy.CopyFeatures_management(lyr, '{}.shp'.format(date.replace('-', "")))
 
-    # get mean of the kriged surface of selected watershed
-    arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
-    cur = arcpy.da.SearchCursor(out_tab, "MEAN")
-    for row in cur:
-        means.append(row[0])
+        #  get model params
+        mp = ModelParams(tpe, data_dir, date)
+
+        # do kriging
+        out_est_file = date.replace("-", "")
+        cell_size = "61.3231323600002"
+        out_var_file = "sv{}".format(date.replace("-", ""))
+        arcpy.gp.Kriging_sa("{}.shp".format(date.replace('-', "")),
+                            "f{}".format(date[:-1]),
+                            out_est_file,
+                            "{} {} {} {} {}".format(mp.model_type, mp.lag_size, mp.range, mp.sill, mp.nugget),
+                            cell_size,
+                            "{} {}".format(mp.sample_type, mp.sample_num),
+                            out_var_file)
+
+        # get mean of the kriged surface of selected watershed
+        arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
+        cur = arcpy.da.SearchCursor(out_tab, "MEAN")
+        for row in cur:
+            means.append(row[0])
 
 
 # Todo: put in loop for each of the time steps
