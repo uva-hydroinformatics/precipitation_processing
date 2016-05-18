@@ -173,7 +173,8 @@ def graph_bars(ax, x, y, **kwargs):
     return rects
 
 
-def plot_sum_by_station_bars(summ_df, f_dir, flav, ply):
+def plot_sum_by_station_bars(summ_df, f_dir, flav):
+    ply = get_outline_polygon()
     fig, ax = plt.subplots(1, 2, figsize=(10, 6))
 
     # bars for overall sum by station##
@@ -206,7 +207,7 @@ def plot_sum_by_station_bars(summ_df, f_dir, flav, ply):
     plt.savefig("{}{}_{}.png".format(check_dir(f_dir), "overall_summary_by_station", flav), dpi=500)
 
 
-def plot_sum_by_day(summ_df, f_dir, flav):
+def plot_sum_by_day(summ_df, filename):
     fig, ax = plt.subplots(figsize=(7,3.5))
     daily_totals = summ_df.iloc[:, 3:].mean()
     daily_std = summ_df.iloc[:, 3:].std()
@@ -232,10 +233,11 @@ def plot_sum_by_day(summ_df, f_dir, flav):
     ax.set_ylim(top=daily_totals.max()*1.1)
     ax.legend((r1[0], r2[0]), ("Volume", "St. Dev"))
     fig.tight_layout()
-    plt.savefig('{}{}_{}.png'.format(check_dir(f_dir), "overall_summary_by_date", flav))
+    plt.savefig(filename)
 
 
-def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply, label):
+def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, label):
+    ply = get_outline_polygon()
     ax.add_patch(PolygonPatch(ply, fc='lightgrey', ec='grey', alpha=0.3))
     ax.axis([3700, 3730, 1050, 1070])
     print ("graphing scatter for {}".format(title))
@@ -256,9 +258,9 @@ def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, ply, la
                         textcoords='offset points',
                         fontsize=2
                         )
-    ax.set_title(title, fontsize=9.5, weight="bold")
-    ax.tick_params(labelsize=8)
-    ax.locator_params(nbins=5)
+    ax.set_title(title, fontsize=15, weight="bold")
+    ax.tick_params(labelsize=14)
+    ax.locator_params(nbins=2)
     return sc
 
 
@@ -266,14 +268,14 @@ def plot_scatter_subplots(df, **kwargs):
     '''
     :param df: data frame to plot with site_name as index. must include x and y attributes. data starts from column
      index 3
-    :param kwargs: necessary kwargs: title, marker_scale, ply (outlines city), label(bool), title, units, dty (save
+    :param kwargs: necessary kwargs: title, marker_scale, label(bool), title, units, dty (save
      directory), and type
     :return:void
     '''
     k = kwargs
     num_cols = len(df.columns[3:])
     if num_cols < 2:
-        fig, a = plt.subplots(1, figsize=(10, 10), sharex=True, sharey=True)
+        fig, a = plt.subplots(1, figsize=(6, 4.2), sharex=True, sharey=True)
         a = [a]
     else:
         fig, a = plt.subplots(5, 4, sharex=True, sharey=True, figsize=(10, 10))
@@ -297,17 +299,16 @@ def plot_scatter_subplots(df, **kwargs):
                            d[col],
                            c_limits,
                            k['marker_scale'],
-                           k['ply'],
                            k.get('label', False))
         i += 1
     cax = fig.add_axes([0.815, 0.1, 0.025, 0.8])
     cb = fig.colorbar(sc, cax=cax)
     cb.set_label(k['units'], fontsize=15)
-    fig.text(.06, .5, "y [km]", rotation="vertical")
-    fig.text(.4, .05, "x [km]")
-    plt.tick_params(labelsize=12)
+    fig.text(0, .5, "y [km]", rotation="vertical", fontsize=14)
+    fig.text(.45, 0, "x [km]", fontsize=14)
+    plt.tick_params(labelsize=18)
     plt.subplots_adjust(wspace=0.25, hspace=.3, right=0.8)
-    plt.savefig("{}{}_{}.png".format(check_dir(k['dty']), k['title'], k['type']), dpi=400)
+    plt.savefig(k['filename'], dpi=400)
 
 
 def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
@@ -326,7 +327,7 @@ def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
         date_dir = "{}{}/".format(dty, date)
 
         if create_ani:
-            create_animation(df, date_dir, kwargs['ply'])
+            create_animation(df, date_dir)
 
         clims = (df.iloc[:, 3:].min().min(), df.iloc[:, 3:].max().max())
 
@@ -360,8 +361,9 @@ def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
                                   **kwargs)
 
 
-def create_animation(df, dty, ply):
+def create_animation(df, dty):
     # set up writer
+    ply = get_outline_polygon()
     Writer = animation.FFMpegWriter()
 
     # set up figure
@@ -423,17 +425,8 @@ def get_daily_aggregate(df, date, time_step):
     return df_agg
 
 
-def get_daily_tots_df(date_range):
-    df = combine_data_frames()
-    summary_df = get_empty_summary_df()
-    for date in date_range:
-        daily_tot = get_daily_aggregate(df, date, "D")
-        daily_tot = daily_tot.sum(level="site_name")
-
-        #add to summary dataframe
-        daily_tot.rename(columns={'precip_mm': date}, inplace=True)
-        summary_df = summary_df.join(daily_tot[date])
-    return summary_df
+def get_daily_tots_df():
+    return read_sub_daily('daily')
 
 
 def get_subdaily_df(df, date_range, time_step):
