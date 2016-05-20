@@ -4,7 +4,7 @@ from arcpy.sa import *
 import pandas as pd
 from storm_stats_functions import check_dir
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 class ModelParams():
     def __init__(self, tpe, d_dir, d):
@@ -23,7 +23,50 @@ class ModelParams():
         self.sample_type = "Variable"
 
 
-#specify type
+def take_out_gages(df, x, y, k):
+    df['dist'] = ((df['x']-x)**2 + (df['y'] - y)**2)**0.5
+    df = df.sort_values('dist')
+    df = df.reset_index()
+    dists = [df.ix[i, 'dist'] for i in range(k)]
+    df = df.ix[k:]
+    return df, dists
+
+
+def per_inc(df):
+    res0 = df[df.num_removed == 0]
+    res1 = df[df.num_removed > 0]
+    a = res0['var']
+    a.reset_index(inplace=True, drop=True)
+    b = res1['var']
+    b.reset_index(inplace=True, drop=True)
+    inc = ((b-a)/a).mean()
+    return inc
+
+
+def plot_results(df):
+    res0 = df[df.num_removed == 0]
+    res1 = df[df.num_removed > 0]
+    y0 = res0['var']
+    y1 = res1['var']
+    n = len(y0)
+
+    fig,ax = plt.subplots()
+    x0 = np.arange(0.875, 0.875+n)
+    x1 = np.arange(1.125, 0.875+n)
+
+    b0 = ax.bar(x0, y0, 0.25)
+    b1 = ax.bar(x1, y1, 0.25, color='orange')
+
+    ax.set_xticks(x1)
+    ax.set_xticklabels(res1.time_stamp, rotation='vertical')
+    ax.set_ylabel(r'Average semi-variance ($mm^2$)')
+    ax.set_xlabel("Date/Time")
+    ax.set_xlim(0.5, 20.5)
+    ax.legend((b0, b1), ("With nearest stations", "Without nearest stations"), loc=0)
+    fig.tight_layout()
+    plt.show()
+
+# specify type
 tpe = 'daily_tots'
 
 # get data from table
@@ -46,9 +89,11 @@ env.workspace = k_dir
 shed_ply = "C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/Problem Spots/problem_watersheds.shp"
 arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
-out_tab = "temp_tab"
 means = []
+j = 0
+res_df = pd.DataFrame()
 for i in np.arange(1):
+    i = 5
     # select individual watershed
     sel = "selection.shp"
     arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
@@ -61,49 +106,78 @@ for i in np.arange(1):
     if wshed_area < 0.001:
         continue
 
-    # take out nearest points and resave as same name
-    j = 0
+    # take out nearest points
+    ks = [0, 2]
 
-    # convert to table then to layer then to shapefile... phew!
-    for date in [dates[0]]:
-        date_df = df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
-        date_df = date_df[date_df[date].notnull()]
-        date_table = "{}{}.xls".format(data_dir, date)
-        date_df.to_excel(date_table, index=False)
+    for k in ks:
+        if k > 0:
+            res = take_out_gages(df, wshed_x, wshed_y, k)
+            red_df = res[0]
+            dists_removed = res[1]
+        else:
+            dists_removed = 0
+            red_df = df
 
-        tbl = "tab.dbf".format(date.replace("-", ""))
+        for date in dates:
+            j += 1
+            # convert to excel then to table then to layer then to shapefile... phew!
+            check_dir(k_dir)
+            date_df = red_df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
+            date_df = date_df[date_df[date].notnull()]
+            date_df.columns = ['site_name', 'x', 'y', 'src', 'z']
+            date_table = "{}temp.xls".format(k_dir)
+            date_df.to_excel(date_table, index=False)
 
-        arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
+            tbl = "tab{}.dbf".format(j)
 
-        spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
-                r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
-        lyr = "Layer".format(date)
-        arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
+            arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
 
-        arcpy.CopyFeatures_management(lyr, '{}.shp'.format(date.replace('-', "")))
+            spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
+                    r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
+            lyr = "Layer{}".format(j)
+            arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
 
-        #  get model params
-        mp = ModelParams(tpe, data_dir, date)
+            rain_shp = 'temp{}.shp'.format(j)
+            arcpy.CopyFeatures_management(lyr, rain_shp)
 
-        # do kriging
-        out_est_file = date.replace("-", "")
-        cell_size = "61.3231323600002"
-        out_var_file = "sv{}".format(date.replace("-", ""))
-        arcpy.gp.Kriging_sa("{}.shp".format(date.replace('-', "")),
-                            "f{}".format(date[:-1]),
-                            out_est_file,
-                            "{} {} {} {} {}".format(mp.model_type, mp.lag_size, mp.range, mp.sill, mp.nugget),
-                            cell_size,
-                            "{} {}".format(mp.sample_type, mp.sample_num),
-                            out_var_file)
+            #  get model params
+            mp = ModelParams(tpe, data_dir, date)
 
-        # get mean of the kriged surface of selected watershed
-        arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
-        cur = arcpy.da.SearchCursor(out_tab, "MEAN")
-        for row in cur:
-            means.append(row[0])
+            # do kriging
+            out_est_file = "rainEst{}".format(j)
+            cell_size = "61.3231323600002"
+            out_var_file = "var{}".format(j)
+            arcpy.gp.Kriging_sa(rain_shp,
+                                "z",
+                                out_est_file,
+                                "{} {} {} {} {}".format(mp.model_type, mp.lag_size, mp.range, mp.sill, mp.nugget),
+                                cell_size,
+                                "{} {}".format(mp.sample_type, mp.sample_num),
+                                out_var_file)
 
+            # get mean of the kriged rain est surface of selected watershed
+            out_tab = "out_tab{}".format(j)
+            arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
+            cur = arcpy.da.SearchCursor(out_tab, "MEAN")
+            for row in cur:
+                rain_est = row[0]
 
+            # get mean of the kriged var surface of selected watershed
+            out_tab = "out_tab{}".format(j)
+            arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_var_file, out_tab, "DATA", "MEAN")
+            cur = arcpy.da.SearchCursor(out_tab, "MEAN")
+            for row in cur:
+                var_est = row[0]
+
+            res_df = res_df.append({'watershed_descr': wshed_descr,
+                                    'time_stamp': date,
+                                    'num_removed': k,
+                                    'dists': dists_removed,
+                                    'est': rain_est,
+                                    'var': var_est},
+                                   ignore_index=True)
+
+    res_df.to_csv("../../Manuscript/Data/{}_res.csv".format(wshed_descr))
 # Todo: put in loop for each of the time steps
 # Todo: loop through each station removing one by one and see the effect on the rainfall estimation
 
