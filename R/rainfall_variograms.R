@@ -28,10 +28,11 @@ moving.neigh <- neigh.init(ndim = 2, type = 2, nmini = 1, nmaxi = 8, nsect = 8, 
 
 model.attr = data.frame()
 l = length(rain.db@items)
-#for (i in 4:l){
-    rain.db <- orig.db
+count = 0
+for (i in 4:l){
     
-    i = 12
+    
+    rain.db <- orig.db
     
     col_name = colnames(rain.filt)[i-1]
     date = strsplit(col_name, "X")[[1]][2]
@@ -41,12 +42,12 @@ l = length(rain.db@items)
     
     #create experimental semivariogram and model
     data.vario <- vario.calc(rain.db,lag=lag,nlag=nlag)
-    data.model <- model.auto(data.vario,title="Modelling omni-directional variogram", draw = F)
+    data.model <- model.auto(data.vario, struct = c("Spherical"), title="Modelling omni-directional variogram", draw = F)
     
     # model characteristics
-    sill = as.numeric(data.model$basics[[1]]$sill)
-    range = as.numeric(data.model$basics[[1]]$range)
-    modeltype = as.character(data.model$basics[[1]]$vartype)
+    sill = as.numeric(data.model$basics[[a]]$sill)
+    range = as.numeric(data.model$basics[[a]]$range)
+    modeltype = as.character(data.model$basics[[a]]$vartype)
     m = data.frame('date' = date, 'sill' = sill, 'range' = range, 'type' = modeltype)
     model.attr = rbind(model.attr, m)
 
@@ -88,7 +89,7 @@ l = length(rain.db@items)
     
     #clean up
     rain.db <- db.delete(rain.db, seq(l+1, l+2))
-#}
+}
 write.csv(model.attr, file = paste(data_dir, infilename, "_model_params.csv", sep=""))
 
 
