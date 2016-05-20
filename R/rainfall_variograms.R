@@ -28,10 +28,7 @@ moving.neigh <- neigh.init(ndim = 2, type = 2, nmini = 1, nmaxi = 8, nsect = 8, 
 
 model.attr = data.frame()
 l = length(rain.db@items)
-count = 0
 for (i in 4:l){
-    
-    
     rain.db <- orig.db
     
     col_name = colnames(rain.filt)[i-1]
@@ -45,9 +42,9 @@ for (i in 4:l){
     data.model <- model.auto(data.vario, struct = c("Spherical"), title="Modelling omni-directional variogram", draw = F)
     
     # model characteristics
-    sill = as.numeric(data.model$basics[[a]]$sill)
-    range = as.numeric(data.model$basics[[a]]$range)
-    modeltype = as.character(data.model$basics[[a]]$vartype)
+    sill = as.numeric(data.model$basics[[1]]$sill)
+    range = as.numeric(data.model$basics[[1]]$range)
+    modeltype = as.character(data.model$basics[[1]]$vartype)
     m = data.frame('date' = date, 'sill' = sill, 'range' = range, 'type' = modeltype)
     model.attr = rbind(model.attr, m)
 
