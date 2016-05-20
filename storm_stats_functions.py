@@ -231,7 +231,7 @@ def plot_sum_by_day(summ_df, filename):
                     width=width,
                     color='y')
     ax.set_ylim(top=daily_totals.max()*1.1)
-    ax.legend((r1[0], r2[0]), ("Volume", "St. Dev"))
+    ax.legend((r1[0], r2[0]), ("Depth", "St. Dev"))
     fig.tight_layout()
     plt.savefig(filename)
 
