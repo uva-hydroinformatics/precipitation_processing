@@ -5,6 +5,8 @@ import pandas as pd
 from storm_stats_functions import check_dir
 import numpy as np
 import matplotlib.pyplot as plt
+import shutil, os, psutil
+
 
 class ModelParams():
     def __init__(self, tpe, d_dir, d):
@@ -12,19 +14,21 @@ class ModelParams():
         param_df = pd.read_csv(param_file)
         param_df.set_index('date', inplace=True)
         d = d.replace("-", ".")
+        d = d.replace(" ", ".")
+        d = d.replace(":", ".")
 
         self.model_type = param_df['type'][d]
         self.lag_size = "1000.000000"
         self.range = param_df['range'][d]
         self.sill = param_df['sill'][d]
-        self.nugget = "0"                                                                 # todo get this from R script
+        self.nugget = "0"  # todo get this from R script
         self.sample_num = "27"  # todo make this dynamic?
         self.krad = arcpy.sa.RadiusVariable(27, 20000)
         self.sample_type = "Variable"
 
 
 def take_out_gages(df, x, y, k):
-    df['dist'] = ((df['x']-x)**2 + (df['y'] - y)**2)**0.5
+    df['dist'] = ((df['x'] - x) ** 2 + (df['y'] - y) ** 2) ** 0.5
     df = df.sort_values('dist')
     df = df.reset_index()
     dists = [df.ix[i, 'dist'] for i in range(k)]
@@ -39,7 +43,7 @@ def per_inc(df):
     a.reset_index(inplace=True, drop=True)
     b = res1['var']
     b.reset_index(inplace=True, drop=True)
-    inc = ((b-a)/a).mean()
+    inc = ((b - a) / a).mean()
     return inc
 
 
@@ -50,9 +54,9 @@ def plot_results(df):
     y1 = res1['var']
     n = len(y0)
 
-    fig,ax = plt.subplots()
-    x0 = np.arange(0.875, 0.875+n)
-    x1 = np.arange(1.125, 0.875+n)
+    fig, ax = plt.subplots()
+    x0 = np.arange(0.875, 0.875 + n)
+    x1 = np.arange(1.125, 0.875 + n)
 
     b0 = ax.bar(x0, y0, 0.25)
     b1 = ax.bar(x1, y1, 0.25, color='orange')
@@ -66,17 +70,68 @@ def plot_results(df):
     fig.tight_layout()
     plt.show()
 
+
+def clearWSLocks(inputWS):
+    '''Attempts to clear ArcGIS/Arcpy locks on a workspace.
+
+    Two methods:
+     1: if ANOTHER process (i.e. ArcCatalog) has the workspace open, that process is terminated
+     2: if THIS process has the workspace open, it attempts to clear locks using arcpy.Exists, arcpy.Compact and arcpy.Exists in sequence
+
+    Notes:
+     1: does not work well with Python Multiprocessing
+     2: this will kill ArcMap or ArcCatalog if they are accessing the worspace, so SAVE YOUR WORK
+
+    Required imports: os, psutil
+    '''
+
+    # get process ID for this process (treated differently)
+    thisPID = os.getpid()
+
+    # normalise path
+    _inputWS = os.path.normpath(inputWS)
+
+    # get list of currently running Arc/Python processes
+    p_List = []
+    ps = psutil.process_iter()
+    for p in ps:
+        if ('Arc' in p.name()) or ('python' in p.name()):
+            p_List.append(p.pid)
+
+            # iterate through processes
+    for pid in p_List:
+        p = psutil.Process(pid)
+
+        # if any have the workspace open
+        if any(_inputWS in pth for pth in [fl.path for fl in p.open_files()]):
+            print '      !!! Workspace open: %s' % _inputWS
+
+            # terminate if it is another process
+            if pid != thisPID:
+                print '      !!! Terminating process: %s' % p.name
+                p.terminate()
+            else:
+                print '      !!! This process has workspace open...'
+
+                # if this process has workspace open, keep trying while it is open...
+    while any(_inputWS in pth for pth in [fl.path for fl in psutil.Process(thisPID).open_files()]):
+        print '    !!! Trying Exists, Compact, Exists to clear locks: %s' % all(
+            [arcpy.Exists(_inputWS), arcpy.Compact_management(_inputWS), arcpy.Exists(_inputWS)])
+
+    return True
+
+
 # specify type
-tpe = 'daily_tots'
+tpe = 'fifteen_min'
 
 # get data from table
 data_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
-table_name = 'dtots'
-ext = '.xls'
+table_name = 'fifteen_min'
+ext = '.xlsx'
 table_path = "{}{}{}".format(data_dir, table_name, ext)
 df = pd.read_excel(table_path)
-dates = df.columns[4:]
-
+a = df.ix[:, 4:]
+non_zero_dates = a.columns[a.sum() > 0]
 
 # set up arcpy environment
 arcpy.CheckOutExtension("spatial")
@@ -91,7 +146,7 @@ arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 means = []
 j = 0
-res_df = pd.DataFrame()
+res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists', 'est', 'var'])
 for i in np.arange(1):
     i = 5
     # select individual watershed
@@ -118,7 +173,7 @@ for i in np.arange(1):
             dists_removed = 0
             red_df = df
 
-        for date in dates:
+        for date in non_zero_dates:
             j += 1
             # convert to excel then to table then to layer then to shapefile... phew!
             check_dir(k_dir)
@@ -128,25 +183,25 @@ for i in np.arange(1):
             date_table = "{}temp.xls".format(k_dir)
             date_df.to_excel(date_table, index=False)
 
-            tbl = "tab{}.dbf".format(j)
+            tbl = "tab.dbf"
 
             arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
 
             spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
                     r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
-            lyr = "Layer{}".format(j)
+            lyr = "Layer"
             arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
 
-            rain_shp = 'temp{}.shp'.format(j)
+            rain_shp = 'temp.shp'
             arcpy.CopyFeatures_management(lyr, rain_shp)
 
             #  get model params
             mp = ModelParams(tpe, data_dir, date)
 
             # do kriging
-            out_est_file = "rainEst{}".format(j)
+            out_est_file = "rainEst"
             cell_size = "61.3231323600002"
-            out_var_file = "var{}".format(j)
+            out_var_file = "var"
             arcpy.gp.Kriging_sa(rain_shp,
                                 "z",
                                 out_est_file,
@@ -156,29 +211,31 @@ for i in np.arange(1):
                                 out_var_file)
 
             # get mean of the kriged rain est surface of selected watershed
-            out_tab = "out_tab{}".format(j)
+            out_tab = "out_tab"
             arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
             cur = arcpy.da.SearchCursor(out_tab, "MEAN")
             for row in cur:
                 rain_est = row[0]
 
             # get mean of the kriged var surface of selected watershed
-            out_tab = "out_tab{}".format(j)
+            out_tab = "out_tab"
             arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_var_file, out_tab, "DATA", "MEAN")
             cur = arcpy.da.SearchCursor(out_tab, "MEAN")
             for row in cur:
                 var_est = row[0]
 
-            res_df = res_df.append({'watershed_descr': wshed_descr,
-                                    'time_stamp': date,
-                                    'num_removed': k,
-                                    'dists': dists_removed,
-                                    'est': rain_est,
-                                    'var': var_est},
-                                   ignore_index=True)
+            a = res_df.append({'watershed_descr': wshed_descr,
+                           'time_stamp': date,
+                           'num_removed': k,
+                           'dists': dists_removed,
+                           'est': rain_est,
+                           'var': var_est},
+                          ignore_index=True)
 
-    res_df.to_csv("../../Manuscript/Data/{}_res.csv".format(wshed_descr))
+            hd = False
+            if j == 1:
+                hd = True
+            a.to_csv("../../Manuscript/Data/15_min_res{}.csv".format(wshed_descr), mode='a', header=hd, index=False)
+            clearWSLocks(k_dir)
 # Todo: put in loop for each of the time steps
 # Todo: loop through each station removing one by one and see the effect on the rainfall estimation
-
-

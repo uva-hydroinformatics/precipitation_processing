@@ -305,7 +305,7 @@ def plot_scatter_subplots(df, **kwargs):
     cb = fig.colorbar(sc, cax=cax)
     cb.set_label(k['units'], fontsize=15)
     fig.text(0, .5, "y [km]", rotation="vertical", fontsize=14)
-    fig.text(.45, 0, "x [km]", fontsize=14)
+    fig.text(.45, 0.009, "x [km]", fontsize=14)
     plt.tick_params(labelsize=18)
     plt.subplots_adjust(wspace=0.25, hspace=.3, right=0.8)
     plt.savefig(k['filename'], dpi=400)
