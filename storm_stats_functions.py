@@ -129,6 +129,10 @@ def get_outline_polygon():
 
 
 def read_sub_daily(table_name):
+    """
+    :param table_name: should be one of three in the database 'fif', 'hr', 'daily'
+    :return:
+    """
     sd = get_data_frame_from_table(table_name)
     sd.set_index('site_name', inplace=True)
     return sd

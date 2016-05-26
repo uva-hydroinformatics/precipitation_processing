@@ -36,41 +36,6 @@ def take_out_gages(df, x, y, k):
     return df, dists
 
 
-def per_inc(df):
-    res0 = df[df.num_removed == 0]
-    res1 = df[df.num_removed > 0]
-    a = res0['var']
-    a.reset_index(inplace=True, drop=True)
-    b = res1['var']
-    b.reset_index(inplace=True, drop=True)
-    inc = ((b - a) / a).mean()
-    return inc
-
-
-def plot_results(df):
-    res0 = df[df.num_removed == 0]
-    res1 = df[df.num_removed > 0]
-    y0 = res0['var']
-    y1 = res1['var']
-    n = len(y0)
-
-    fig, ax = plt.subplots()
-    x0 = np.arange(0.875, 0.875 + n)
-    x1 = np.arange(1.125, 0.875 + n)
-
-    b0 = ax.bar(x0, y0, 0.25)
-    b1 = ax.bar(x1, y1, 0.25, color='orange')
-
-    ax.set_xticks(x1)
-    ax.set_xticklabels(res1.time_stamp, rotation='vertical')
-    ax.set_ylabel(r'Average semi-variance ($mm^2$)')
-    ax.set_xlabel("Date/Time")
-    ax.set_xlim(0.5, 20.5)
-    ax.legend((b0, b1), ("With nearest stations", "Without nearest stations"), loc=0)
-    fig.tight_layout()
-    plt.show()
-
-
 def clearWSLocks(inputWS):
     '''Attempts to clear ArcGIS/Arcpy locks on a workspace.
 
@@ -122,11 +87,11 @@ def clearWSLocks(inputWS):
 
 
 # specify type
-tpe = 'fifteen_min'
+tpe = 'daily'
 
 # get data from table
 data_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
-table_name = 'fifteen_min'
+table_name = tpe
 ext = '.xlsx'
 table_path = "{}{}{}".format(data_dir, table_name, ext)
 df = pd.read_excel(table_path)
@@ -147,8 +112,8 @@ num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 means = []
 j = 0
 res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists', 'est', 'var'])
-for i in np.arange(1):
-    i = 5
+for i in np.arange(num_rows):
+    hd = True # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
     arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
@@ -161,8 +126,23 @@ for i in np.arange(1):
     if wshed_area < 0.001:
         continue
 
-    # take out nearest points
-    ks = [0, 2]
+    # take out p nearest points
+    if 'Kendall Street' in wshed_descr:
+        p = 2
+    elif 'Mortons Road' in wshed_descr:
+        p = 1
+    elif 'Great Neck Road' in wshed_descr:
+        p = 3
+    elif 'Baltic' in wshed_descr:
+        p = 1
+    elif 'Red Tide Road' in wshed_descr:
+        p = 3
+    elif 'Clubhouse' in wshed_descr:
+        p = 2
+    elif 'Plaza Trail' in wshed_descr:
+        p = 2
+
+    ks = [0, p]
 
     for k in ks:
         if k > 0:
@@ -232,10 +212,8 @@ for i in np.arange(1):
                            'var': var_est},
                           ignore_index=True)
 
-            hd = False
-            if j == 1:
-                hd = True
-            a.to_csv("../../Manuscript/Data/15_min_res{}.csv".format(wshed_descr), mode='a', header=hd, index=False)
+            a.to_csv("../../Manuscript/Data/{}_{}.csv".format(tpe, wshed_descr), mode='a', header=hd, index=False)
             clearWSLocks(k_dir)
+            hd = False
 # Todo: put in loop for each of the time steps
 # Todo: loop through each station removing one by one and see the effect on the rainfall estimation

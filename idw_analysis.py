@@ -96,34 +96,7 @@ def error_summary(error_df):
                'max mm diff': maxdif}
     return summary
 
-l = ['15_min_all', 'hour_all']
-ll = []
-# for e in l:
-#     comb_sub_day = read_sub_daily(e)
-#     ll.append(comb_sub_day)
-# d = get_daily_tots_df(combine_data_frames(), get_date_range())
-# ll.append(d)
-#
-# q = []
-# for e in ll:
-#     comb_sub_day = qc_wu(e)
-#     c = analyze_from_neighbors(comb_sub_day, False)
-#     error_summary(c)
-#     q.append(c)
-#
-# print q
-
-fmin = read_sub_daily(l[0])
+fmin = read_sub_daily('fif')
 c = analyze_from_neighbors(fmin, True)
-s = c[1]
-s.sort_values('percent_out', inplace=True)
-s = s.set_index('station')
-a = s.percent_out.plot.bar()
-a.set_ylabel('percent of measurements as outliers')
-f = a.get_figure()
-f.tight_layout()
-f.show()
-st = s[s.src != 'wu']
-sf = s[s.src == 'wu']
 
 
