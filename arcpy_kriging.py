@@ -4,8 +4,8 @@ from arcpy.sa import *
 import pandas as pd
 from storm_stats_functions import check_dir
 import numpy as np
-import matplotlib.pyplot as plt
-import shutil, os, psutil
+import shutil, os, psutil, stat
+import time
 
 
 class ModelParams():
@@ -32,8 +32,37 @@ def take_out_gages(df, x, y, k):
     df = df.sort_values('dist')
     df = df.reset_index()
     dists = [df.ix[i, 'dist'] for i in range(k)]
+    stations_removed = [df.ix[i, 'site_name'] for i in range(k)]
     df = df.ix[k:]
-    return df, dists
+    return df, dists, stations_removed
+
+
+def change_permissions_recursive(path):
+    for root, dirs, files in os.walk(path, topdown=False):
+        for dir in [os.path.join(root,d) for d in dirs]:
+            os.chmod(dir, stat.S_IWRITE)
+    for file in [os.path.join(root, f) for f in files]:
+            os.chmod(file, stat.S_IWRITE)
+
+
+def onerror(func, path, exc_info):
+    """
+    Error handler for ``shutil.rmtree``.
+
+    If the error is due to an access error (read only file)
+    it attempts to add write permission and then retries.
+
+    If the error is for another reason it re-raises the error.
+
+    Usage : ``shutil.rmtree(path, onerror=onerror)``
+    """
+    import stat
+    if not os.access(path, os.W_OK):
+        # Is the error an access error ?
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    else:
+        raise
 
 
 def clearWSLocks(inputWS):
@@ -86,8 +115,8 @@ def clearWSLocks(inputWS):
     return True
 
 
-# specify type
-tpe = 'daily'
+# specify type; should be 'fifteen_min', 'hr', or 'daily'
+tpe = 'fifteen_min'
 
 # get data from table
 data_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
@@ -101,7 +130,14 @@ non_zero_dates = a.columns[a.sum() > 0]
 # set up arcpy environment
 arcpy.CheckOutExtension("spatial")
 env.extent = arcpy.Extent(3705690, 1051630, 3724920, 1068584)
-k_dir = check_dir('C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging')
+k_dir = 'C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging2'
+check_dir(k_dir)
+change_permissions_recursive(k_dir)
+os.chmod(k_dir, stat.S_IWRITE)
+shutil.rmtree(k_dir, onerror=onerror, ignore_errors=False)
+check_dir(k_dir)
+change_permissions_recursive(k_dir)
+
 env.overwriteOutput = True
 env.workspace = k_dir
 
@@ -111,8 +147,10 @@ arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 means = []
 j = 0
-res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists', 'est', 'var'])
-for i in np.arange(num_rows):
+res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists','stations_removed', 'est',
+                               'var'])
+# for i in [0, 1, 2, 3, 4, 6]:
+for i in [6]:
     hd = True # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
@@ -142,15 +180,18 @@ for i in np.arange(num_rows):
     elif 'Plaza Trail' in wshed_descr:
         p = 2
 
-    ks = [0, p]
+    ks = [2, 5, 6, 7, 8, 9, 10, 11, 12]
+    ks.pop(ks.index(p))
 
     for k in ks:
         if k > 0:
             res = take_out_gages(df, wshed_x, wshed_y, k)
             red_df = res[0]
             dists_removed = res[1]
+            stations_removed = res[2]
         else:
             dists_removed = 0
+            stations_removed = ""
             red_df = df
 
         for date in non_zero_dates:
@@ -160,7 +201,7 @@ for i in np.arange(num_rows):
             date_df = red_df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
             date_df = date_df[date_df[date].notnull()]
             date_df.columns = ['site_name', 'x', 'y', 'src', 'z']
-            date_table = "{}temp.xls".format(k_dir)
+            date_table = "{}/temp.xls".format(k_dir)
             date_df.to_excel(date_table, index=False)
 
             tbl = "tab.dbf"
@@ -205,15 +246,23 @@ for i in np.arange(num_rows):
                 var_est = row[0]
 
             a = res_df.append({'watershed_descr': wshed_descr,
-                           'time_stamp': date,
-                           'num_removed': k,
-                           'dists': dists_removed,
-                           'est': rain_est,
-                           'var': var_est},
-                          ignore_index=True)
+                               'time_stamp': date,
+                               'num_removed': k,
+                               'dists': dists_removed,
+                               'stations_removed':stations_removed,
+                               'est': rain_est,
+                               'var': var_est},
+                              ignore_index=True)
 
-            a.to_csv("../../Manuscript/Data/{}_{}.csv".format(tpe, wshed_descr), mode='a', header=hd, index=False)
+            a.to_csv("C:/Users/jeff_dsktp/Documents/Research/Sadler_1st_Paper/Manuscript/Data/kriging results/{}/{}_{}.csv".format(tpe, tpe, wshed_descr), mode='a', header=hd, index=False)
             clearWSLocks(k_dir)
+            arcpy.Delete_management(out_tab)
+            arcpy.Delete_management(out_var_file)
+            arcpy.Delete_management(out_est_file)
+            arcpy.Delete_management(rain_shp)
+            arcpy.Delete_management(date_table)
             hd = False
+            print "name: {}    date:{}    num_removed:{}".format(wshed_descr, date, k)
+    arcpy.Delete_management(sel)
 # Todo: put in loop for each of the time steps
 # Todo: loop through each station removing one by one and see the effect on the rainfall estimation

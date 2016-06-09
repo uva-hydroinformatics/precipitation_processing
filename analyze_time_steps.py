@@ -4,32 +4,35 @@
 # Email: jms3fb@virginia.edu
 # Original date: 1/13/2016
 
-import pyodbc
-import pandas
+import pandas as pd
 import numpy as np
-# set up db connection
-MDB = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/rainfall_data_master.accdb"; DRV = '{Microsoft Access Driver (*.mdb, *.accdb)}'; PWD = 'pw'
+from storm_stats_functions import get_data_frame_from_table, qc_wu, get_date_range
 
+dr = get_date_range()
 # connect to db
-con = pyodbc.connect('DRIVER={};DBQ={};PWD={}'.format(DRV,MDB,PWD))
-cur = con.cursor()
-
-table_name = "wu_observation"
+table_name = "all_data"
 # run a query and get the results
-SQL = 'SELECT * FROM {};'.format(table_name) # your query goes here
-rows = cur.execute(SQL).fetchall()
-a = np.array(rows)
-df = pandas.DataFrame(a, columns=[i[0] for i in cur.description])
-times = df['datetime']
+df = get_data_frame_from_table(table_name)
+df = df[df.src=='WU']
+df = qc_wu(df)
+df.reset_index(inplace=True)
+df.datetime = pd.to_datetime(df.datetime)
 intervals = list()
+for n in df.site_name.unique():
+    df1 = df[df.site_name == n]
+    for d in dr:
+        df1 = df1.set_index(df1.datetime)
+        try:
+            df2 = df1[d]
+            for i in range(len(df2.index)-1):
+                intervals.append((df2.index[i + 1] - df2.index[i]).seconds)
+        except:
+            continue
+
 # get intervals in seconds
-for i in range(len(times)-1):
-    intervals.append((times[i+1] - times[i]).seconds)
 intervals_arr = np.array(intervals)
 print("mean: {}".format(str(np.mean(intervals_arr))))
 print("max: {}".format(str(np.max(intervals_arr))))
 print("min: {}".format(str(np.min(intervals_arr))))
 print("median: {}".format(str(np.median(intervals_arr))))
 print("std: {}".format(str(np.std(intervals_arr))))
-cur.close()
-con.close()

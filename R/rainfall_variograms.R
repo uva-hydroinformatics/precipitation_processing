@@ -2,7 +2,7 @@ library(RGeostats)
 library(XLConnect)
 
 #read in csvfile and change into rgeostats db object
-infilename = "hr"
+infilename = "fifteen_min"
 fileext = ".xlsx"
 data_dir = "C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\data\\"
 rain.wb = loadWorkbook(paste(data_dir, infilename, fileext, sep=""))
