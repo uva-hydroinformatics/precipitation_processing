@@ -7,6 +7,7 @@ import numpy as np
 def bar_summary(df):
     fig, ax = plt.subplots()
     df.sort_values('percent_out', inplace=True)
+    df.reset_index(inplace=True, drop=True)
 
     cs = ['moccasin', 'cornflowerblue', 'midnightblue']
     hs = ['','.','/']
@@ -24,12 +25,21 @@ def bar_summary(df):
             lab = 'Weather Underground'
 
         ax.bar(x, y, color=cs[i], label=lab)
-
+    outlier_df = df[df.station == 'KVAVIRGI52']
+    ax.annotate('KVAVIRGI52',
+                xy=(outlier_df.index[0], outlier_df.percent_out*0.95),
+                xycoords='data',
+                xytext=(32, 0.27),
+                textcoords='data',
+                arrowprops=dict(facecolor='black', shrink=0.05),
+                verticalalignment='mid'
+                )
     ax.set_xticks(np.arange(0.5, 52.5, 1))
-    ax.set_xticklabels(df.station, rotation='vertical')
+    ax.set_xticklabels("", rotation='vertical')
+    # ax.set_xticklabels(df.station, rotation='vertical')
     ax.set_ylabel('Percent of measurements as outliers')
     ax.set_xlabel('Station')
-    ax.set_xlim(0,52)
+    ax.set_xlim(0, len(df.station.unique()))
     ax.legend(prop={'size': 12}, loc=0)
     fig.tight_layout()
     plt.show()
@@ -40,7 +50,7 @@ def boxplot(df):
     plt.show()
 
 
-def scatter_dist(df, dist_type):
+def scatter_dist(df):
     """
     produces scatter plots of outliers vs distance and colored by station type
     :param df:
@@ -82,6 +92,6 @@ def scatter_dist(df, dist_type):
 
 # read in data
 df = get_data_frame_from_table('qc_summary')
-# bar_summary(df)
+bar_summary(df)
 # boxplot(df)
-scatter_dist(df, 'longest_dist')
+# scatter_dist(df)

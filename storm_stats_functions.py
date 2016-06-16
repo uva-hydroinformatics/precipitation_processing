@@ -4,7 +4,6 @@
 
 import numpy as np
 import pandas as pd
-import pyodbc
 import datetime
 import matplotlib.pyplot as plt
 import math
@@ -26,7 +25,7 @@ plt.rcParams['animation.ffmpeg_path'] = \
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
     # set up db connection
-    db = "C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/master.sqlite";
+    db = "../Data/master.sqlite"
 
     # connect to db
     con = sqlite3.connect(db)
@@ -79,6 +78,7 @@ def combine_data_frames():
     # prepare the data by pulling from the database and making the datetime the index
     df = get_data_frame_from_table('all_data')
     df['datetime'] = pd.to_datetime(df['datetime'])
+    df = exclude_zero_sum_days(df)
     df = df.set_index('datetime')
 
     return df
@@ -430,10 +430,22 @@ def get_daily_aggregate(df, date, time_step):
 
 
 def get_daily_tots_df():
-    return read_sub_daily('daily')
+        summary_df = get_empty_summary_df()
+        df = combine_data_frames()
+        for date in get_date_range():
+            daily_tot = get_daily_aggregate(df, date, "D")
+            daily_tot = daily_tot.sum(level="site_name")
+
+            # add to summary dataframe
+            daily_tot.rename(columns={'precip_mm': date}, inplace=True)
+            summary_df = summary_df.join(daily_tot[date])
+        summary_df = qc_wu(summary_df)
+        return summary_df
 
 
-def get_subdaily_df(df, date_range, time_step):
+def get_subdaily_df(time_step):
+    date_range = get_date_range()
+    df = combine_data_frames()
     dur_df = get_storm_durations(df, date_range, 0.025)
     summary_df = get_empty_summary_df()
     l = []
@@ -452,7 +464,7 @@ def get_subdaily_df(df, date_range, time_step):
         for t in time_range:
             time_range_formatted.append(t._repr_base)
 
-        # aggregate by 15 mins
+        # aggregate
         df_gp = df_date.groupby(['x', 'y', 'site_name', 'src'])
         df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
         df_agg = df_agg.reset_index()
@@ -474,6 +486,11 @@ def combine_sub_daily_dfs(df_list):
     summ_df = get_empty_summary_df()
     for df in df_list:
         summ_df = summ_df.join(df[1].ix[:,3:])
+    a = summ_df.iloc[:, 3:].sum()
+    a = a[a>0]
+    cols = ['x', 'y', 'src']
+    cols.extend(a.index)
+    summ_df = summ_df.loc[:, cols]
     return summ_df
 
 
@@ -512,6 +529,20 @@ def get_daily_max_intensities(df, date_range, time_step):
     return summary_df
 
 
+def exclude_zero_sum_days(raw_df):
+    dates = get_date_range()
+    for site in raw_df.site_name.unique():
+        df1 = raw_df[raw_df.site_name == site]
+        df1.set_index('datetime', inplace=True)
+        for date in dates:
+            try:
+                if df1[date].precip_mm.sum() == 0:
+                    raw_df.loc[df1[date]['index'], 'precip_mm'] = np.nan
+            except KeyError:
+                continue
+    return raw_df
+
+
 def create_summary_table(summ_df, mdih, mdif, dty, file_name):
     dur_df = get_storm_durations(summ_df, get_date_range(), 0.025)
     overall_summary_df_by_date = dur_df.join(pd.DataFrame({'mean_total_rainfall_volume (mm)': summ_df.mean()}))
@@ -534,6 +565,30 @@ def reformat_dates(dr):
     return formatted
 
 
+def update_table(table_name, df):
+    con = sqlite3.connect('../data/master.sqlite')
+    c = con.cursor()
+    c.execute('DROP TABLE {}'.format(table_name))
+    df.to_sql(table_name, con)
+
+
+def update_db(table_name):
+    """
+    :param table_name: should be 'fif', 'daily' or 'hr'
+    :return:
+    """
+    if table_name == 'daily':
+        df = get_daily_tots_df()
+
+    else:
+        if table_name == 'fif':
+            dfs = get_subdaily_df('15T')
+        elif table_name == 'hr':
+            dfs = get_subdaily_df('H')
+        df = combine_sub_daily_dfs(dfs)
+    update_table(table_name, df)
+    return df
+
 def check_dir(d):
     if not os.path.exists(d):
         os.makedirs(d)
@@ -542,4 +597,5 @@ def check_dir(d):
 base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
 fig_dir = '{}figures/python/'.format(base_dir)
 data_dir = '{}data/'.format(base_dir)
+
 

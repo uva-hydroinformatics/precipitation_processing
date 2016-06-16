@@ -30,6 +30,7 @@ for i in range(num_photos):
         soup = bs4.BeautifulSoup(response.text, "lxml")
         time.sleep(0.5)
     d = soup.find(id='photo_desc').text
+    city = soup.find(id='photo_title')
     if d not in descriptions:
-        descriptions.append(d)
+        descriptions.append((city, d))
     print descriptions[i]

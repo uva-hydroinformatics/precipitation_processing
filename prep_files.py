@@ -8,4 +8,4 @@ df = read_sub_daily('fif')
 # df = qc_wu(df)
 
 #save as excel file
-df.to_excel('../data/fifteen_min_no_qc.xlsx', index=True)
+df.to_excel('../data/fifteen_min.xlsx', index=True)

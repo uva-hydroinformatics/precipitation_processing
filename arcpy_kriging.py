@@ -149,8 +149,7 @@ means = []
 j = 0
 res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists','stations_removed', 'est',
                                'var'])
-# for i in [0, 1, 2, 3, 4, 6]:
-for i in [6]:
+for i in [3]:
     hd = True # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
@@ -180,8 +179,8 @@ for i in [6]:
     elif 'Plaza Trail' in wshed_descr:
         p = 2
 
-    ks = [2, 5, 6, 7, 8, 9, 10, 11, 12]
-    ks.pop(ks.index(p))
+    ks = [9]
+    # ks.pop(ks.index(p))
 
     for k in ks:
         if k > 0:

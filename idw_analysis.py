@@ -70,6 +70,8 @@ def analyze_from_neighbors(df, outlier_check):
         if outlier_check:
             n_out = sum(s_df.out != 'NA')
             n_poss = float(s_df.shape[0])
+            if not n_poss:
+                continue
             indivi_summ = {'n_out': n_out, 'n_poss': n_poss, 'percent_out': (n_out/n_poss),
                            'neighbors': closest_points.index.tolist(), 'num_neighbors': num_neighs,
                            'shortest_dist': closest_neigh_dist, 'longest_dist': furthest_neigh_dist,
@@ -98,5 +100,9 @@ def error_summary(error_df):
 
 fmin = read_sub_daily('fif')
 c = analyze_from_neighbors(fmin, True)
-
+for df in c:
+    l = [str(df['neighbors'][i]) for i in df.index]
+    df['neighbors'] = l
+update_table('qc_results', c[0])
+update_table('qc_summary', c[1])
 
