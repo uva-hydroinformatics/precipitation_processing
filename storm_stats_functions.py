@@ -262,6 +262,7 @@ def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, label):
                         textcoords='offset points',
                         fontsize=2
                         )
+    title = title.split(" ")[-1] if ":" in title else title
     ax.set_title(title, fontsize=15, weight="bold")
     ax.tick_params(labelsize=14)
     ax.locator_params(nbins=2)
@@ -281,6 +282,10 @@ def plot_scatter_subplots(df, **kwargs):
     if num_cols < 2:
         fig, a = plt.subplots(1, figsize=(6, 4.2), sharex=True, sharey=True)
         a = [a]
+    elif num_cols<20:
+        rows = int(math.ceil(num_cols/4.))
+        fig, a = plt.subplots(rows, 4, sharex=True, sharey=True, figsize=(10, rows*2))
+        a = a.ravel()
     else:
         fig, a = plt.subplots(5, 4, sharex=True, sharey=True, figsize=(10, 10))
         a = a.ravel()
@@ -308,11 +313,15 @@ def plot_scatter_subplots(df, **kwargs):
     cax = fig.add_axes([0.815, 0.1, 0.025, 0.8])
     cb = fig.colorbar(sc, cax=cax)
     cb.set_label(k['units'], fontsize=15)
-    fig.text(0, .5, "y [km]", rotation="vertical", fontsize=14)
+    fig.text(0.03, .5, "y [km]", rotation="vertical", fontsize=14)
     fig.text(.45, 0.009, "x [km]", fontsize=14)
+    if ":" in col:
+        fig.suptitle(col.split(" ")[0], fontsize=15, weight='bold')
+        fig.subplots_adjust(top=.87, bottom=0.1)
     plt.tick_params(labelsize=18)
     plt.subplots_adjust(wspace=0.25, hspace=.3, right=0.8)
     plt.savefig(k['filename'], dpi=400)
+    return fig, a
 
 
 def plot_subdaily_scatter(df_list, create_ani, t_step, **kwargs):
@@ -491,6 +500,7 @@ def combine_sub_daily_dfs(df_list):
     cols = ['x', 'y', 'src']
     cols.extend(a.index)
     summ_df = summ_df.loc[:, cols]
+    summ_df = qc_wu(summ_df)
     return summ_df
 
 
@@ -566,7 +576,7 @@ def reformat_dates(dr):
 
 
 def update_table(table_name, df):
-    con = sqlite3.connect('../data/master.sqlite')
+    con = sqlite3.connect('../Data/master.sqlite')
     c = con.cursor()
     c.execute('DROP TABLE {}'.format(table_name))
     df.to_sql(table_name, con)

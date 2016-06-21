@@ -1,12 +1,13 @@
 library(RGeostats)
 library(XLConnect)
+library(DBI)
+library(RSQLite)
 
 #read in csvfile and change into rgeostats db object
-infilename = "fifteen_min"
-fileext = ".xlsx"
-data_dir = "C:\\Users\\jeff_dsktp\\Box Sync\\Sadler_1stPaper\\rainfall\\data\\"
-rain.wb = loadWorkbook(paste(data_dir, infilename, fileext, sep=""))
-rain.csv <- readWorksheet(rain.wb, sheet = 1, header=TRUE)
+data_dir = "../../Data/"
+con = dbConnect(RSQLite::SQLite(), dbname=paste(data_dir,"master.sqlite", sep=""))
+table = "fif"
+rain.csv <- dbGetQuery(con, paste("select * from ", table, sep=""))
 non_zero_columns = which(colSums(rain.csv[-1:-4], na.rm=T) !=0) + 4
 
 #change which sources you would like to consider
@@ -29,8 +30,7 @@ for (i in 1:l){
     rain.db <- db.create(rain.filt, ndim=2,autoname=F,flag.grid=F)
   
     
-    col_name = colnames(rain.filt)[3]
-    date = strsplit(col_name, "X")[[1]][2]
+    date = colnames(rain.filt)[3]
 
     rain.db <- db.locate(rain.db, col_name, "z")
     
@@ -77,7 +77,7 @@ for (i in 1:l){
     #dev.off()
     
 }
-write.csv(model.attr, file = paste(data_dir, infilename, "_model_params.csv", sep=""))
+dbWriteTable(con, paste(table, "_model_params", sep=""), model.attr, overwrite=TRUE)
 
 
 

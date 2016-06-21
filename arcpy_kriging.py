@@ -2,20 +2,17 @@ import arcpy
 from arcpy import env
 from arcpy.sa import *
 import pandas as pd
-from storm_stats_functions import check_dir
+from storm_stats_functions import check_dir, get_data_frame_from_table
 import numpy as np
 import shutil, os, psutil, stat
 import time
 
 
 class ModelParams():
-    def __init__(self, tpe, d_dir, d):
-        param_file = "{}{}_model_params.csv".format(d_dir, tpe)
-        param_df = pd.read_csv(param_file)
+    def __init__(self, tpe, d):
+        table = "{}_model_params".format(tpe)
+        param_df = get_data_frame_from_table(table)
         param_df.set_index('date', inplace=True)
-        d = d.replace("-", ".")
-        d = d.replace(" ", ".")
-        d = d.replace(":", ".")
 
         self.model_type = param_df['type'][d]
         self.lag_size = "1000.000000"
@@ -116,21 +113,17 @@ def clearWSLocks(inputWS):
 
 
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
-tpe = 'fifteen_min'
+tpe = 'daily'
 
 # get data from table
-data_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/data/'
-table_name = tpe
-ext = '.xlsx'
-table_path = "{}{}{}".format(data_dir, table_name, ext)
-df = pd.read_excel(table_path)
+df = get_data_frame_from_table(tpe)
 a = df.ix[:, 4:]
 non_zero_dates = a.columns[a.sum() > 0]
 
 # set up arcpy environment
 arcpy.CheckOutExtension("spatial")
 env.extent = arcpy.Extent(3705690, 1051630, 3724920, 1068584)
-k_dir = 'C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging2'
+k_dir = 'C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging1'
 check_dir(k_dir)
 change_permissions_recursive(k_dir)
 os.chmod(k_dir, stat.S_IWRITE)
@@ -149,7 +142,8 @@ means = []
 j = 0
 res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists','stations_removed', 'est',
                                'var'])
-for i in [3]:
+#do it for all the watersheds
+for i in [0, 1, 2, 3, 4, 5, 6]:
     hd = True # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
@@ -179,9 +173,9 @@ for i in [3]:
     elif 'Plaza Trail' in wshed_descr:
         p = 2
 
-    ks = [9]
+    ks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     # ks.pop(ks.index(p))
-
+    # do it for all the different number of removed stations
     for k in ks:
         if k > 0:
             res = take_out_gages(df, wshed_x, wshed_y, k)
@@ -192,7 +186,7 @@ for i in [3]:
             dists_removed = 0
             stations_removed = ""
             red_df = df
-
+        # do it for all the dates
         for date in non_zero_dates:
             j += 1
             # convert to excel then to table then to layer then to shapefile... phew!
@@ -216,7 +210,7 @@ for i in [3]:
             arcpy.CopyFeatures_management(lyr, rain_shp)
 
             #  get model params
-            mp = ModelParams(tpe, data_dir, date)
+            mp = ModelParams(tpe, date)
 
             # do kriging
             out_est_file = "rainEst"
@@ -253,7 +247,10 @@ for i in [3]:
                                'var': var_est},
                               ignore_index=True)
 
-            a.to_csv("C:/Users/jeff_dsktp/Documents/Research/Sadler_1st_Paper/Manuscript/Data/kriging results/{}/{}_{}.csv".format(tpe, tpe, wshed_descr), mode='a', header=hd, index=False)
+            a.to_csv("../Data/kriging results/{}/{}_{}.csv".format(tpe, tpe, wshed_descr),
+                     mode='a',
+                     header=hd,
+                     index=False)
             clearWSLocks(k_dir)
             arcpy.Delete_management(out_tab)
             arcpy.Delete_management(out_var_file)
