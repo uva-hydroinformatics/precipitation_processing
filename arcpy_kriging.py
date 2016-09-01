@@ -10,6 +10,8 @@ import time
 
 class ModelParams():
     def __init__(self, tpe, d):
+        if tpe == 'fifteen_min':
+            tpe = 'fif'
         table = "{}_model_params".format(tpe)
         param_df = get_data_frame_from_table(table)
         param_df.set_index('date', inplace=True)
@@ -116,7 +118,7 @@ def clearWSLocks(inputWS):
 tpe = 'daily'
 
 # get data from table
-df = get_data_frame_from_table(tpe)
+df = get_data_frame_from_table('daily')
 a = df.ix[:, 4:]
 non_zero_dates = a.columns[a.sum() > 0]
 
@@ -135,16 +137,22 @@ env.overwriteOutput = True
 env.workspace = k_dir
 
 # get watershed polygon and iterate through them
-shed_ply = "C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/Problem Spots/problem_watersheds.shp"
+shed_ply = "C:/Users/jeff_dsktp/Documents/Research/Sadler_1st_Paper/Manuscript/Data/GIS/problem_watersheds.shp"
 arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 means = []
 j = 0
-res_df = pd.DataFrame(columns=['watershed_descr', 'time_stamp', 'num_removed', 'dists','stations_removed', 'est',
+res_df = pd.DataFrame(columns=['watershed_descr',
+                               'time_stamp',
+                               'num_removed',
+                               'dists',
+                               'stations_removed',
+                               'est',
                                'var'])
-#do it for all the watersheds
-for i in [0, 1, 2, 3, 4, 5, 6]:
-    hd = True # makes it so there is a header for each file
+
+# do it these watersheds (according to arcid)
+for i in [0,1,2,3,4,5,6]:
+    hd = True  # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
     arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
@@ -173,8 +181,7 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
     elif 'Plaza Trail' in wshed_descr:
         p = 2
 
-    ks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-    # ks.pop(ks.index(p))
+    ks = [0, p]
     # do it for all the different number of removed stations
     for k in ks:
         if k > 0:

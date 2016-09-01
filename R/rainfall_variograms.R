@@ -4,9 +4,9 @@ library(DBI)
 library(RSQLite)
 
 #read in csvfile and change into rgeostats db object
-data_dir = "../../Data/"
+data_dir = "C:/Users/jeff_dsktp/Documents/Research/Sadler_1st_Paper/Manuscript/Data/"
 con = dbConnect(RSQLite::SQLite(), dbname=paste(data_dir,"master.sqlite", sep=""))
-table = "fif"
+table = "daily"
 rain.csv <- dbGetQuery(con, paste("select * from ", table, sep=""))
 non_zero_columns = which(colSums(rain.csv[-1:-4], na.rm=T) !=0) + 4
 
@@ -32,7 +32,7 @@ for (i in 1:l){
     
     date = colnames(rain.filt)[3]
 
-    rain.db <- db.locate(rain.db, col_name, "z")
+    rain.db <- db.locate(rain.db, date, "z")
     
     #create experimental semivariogram and model
     data.vario <- vario.calc(rain.db,lag=lag,nlag=nlag)

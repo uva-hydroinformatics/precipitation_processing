@@ -13,10 +13,10 @@ soup = bs4.BeautifulSoup(response.text, "lxml")
 hs = soup.select('h1.entry-title')
 flood_hs = [h for h in hs if 'flood' in h.string.lower()]
 # get the links to the flood stories
-flood_as = [h.a.get('href') for h in flood_hs]
+flood_as = [h.a.get('href') for h in [flood_hs[3]]]
 photo_as = [a for a in flood_as if 'photomojo' in a]
 
-response = requests.get(photo_as[1])
+response = requests.get(photo_as[0])
 soup = bs4.BeautifulSoup(response.text, 'lxml')
 p = soup.find(id='paginate')
 num_photos = int(p.text.strip().split(" ")[-1])
@@ -32,5 +32,5 @@ for i in range(num_photos):
     d = soup.find(id='photo_desc').text
     city = soup.find(id='photo_title')
     if d not in descriptions:
-        descriptions.append((city, d))
+        descriptions.append((city.contents[0], d))
     print descriptions[i]

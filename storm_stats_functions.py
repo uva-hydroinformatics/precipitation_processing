@@ -25,7 +25,7 @@ plt.rcParams['animation.ffmpeg_path'] = \
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
     # set up db connection
-    db = "../Data/master.sqlite"
+    db = "..\\..\\Data\\master.sqlite"
 
     # connect to db
     con = sqlite3.connect(db)
@@ -114,8 +114,7 @@ def get_date_range():
 
 def get_outline_polygon():
     # read in shapefile for city outline
-    d = "C:\\Users\\jeff_dsktp\\Google Drive\\" \
-        "Hampton Roads GIS Data\\VA_Beach_Data\\city_boundary\\vab_boundary_prj_m.shp"
+    d = "..\\..\\Data\\GIS\\vab_boundary_prj_m.shp"
     ps = shapefile.Reader(d)
     outline_poly = ps.iterShapes().next().__geo_interface__
 
@@ -169,10 +168,11 @@ def graph_bars(ax, x, y, **kwargs):
     k = kwargs
     print ("graphing bars for {}".format(k['title']))
     rects = ax.bar(x, y, k['width'], color=k['color'])
-    ax.set_ylabel(k['ylab'])
+    ax.set_ylabel(k.get('ylab'), fontsize=kwargs.get('font_size'), multialignment='center')
     ax.set_xticks(x+k['width']/2)
-    ax.set_xticklabels(k['xlabs'], rotation='vertical', fontsize=kwargs.get('font_size'))
+    ax.set_xticklabels(k.get('xlabs'), rotation='vertical', fontsize=kwargs.get('font_size'))
     ax.set_title(k['title'])
+    ax.tick_params(labelsize=kwargs.get('font_size'))
     # autolabel(ax, rects)
     return rects
 
@@ -212,35 +212,38 @@ def plot_sum_by_station_bars(summ_df, f_dir, flav):
 
 
 def plot_sum_by_day(summ_df, filename):
-    fig, ax = plt.subplots(figsize=(7,3.5))
+    fig, ax = plt.subplots(figsize=(5, 2.8))
     daily_totals = summ_df.iloc[:, 3:].mean()
     daily_std = summ_df.iloc[:, 3:].std()
     x = np.arange(len(daily_totals)*2, step=2)
     y = daily_totals
     width = 0.75
+    ft_size = 9
     r1 = graph_bars(ax,
                     x,
                     y,
                     title="",
                     xlabs=daily_totals.index,
-                    ylab="cumulative total precip (mm)",
+                    ylab="Cumulative total\n precip (mm)",
                     width=width,
+                    font_size=ft_size,
                     color='b')
     r2 = graph_bars(ax,
                     x+width,
                     daily_std,
                     title="",
                     xlabs=daily_totals.index,
-                    ylab="cumulative total precip (mm)",
+                    ylab="Cumulative total\n precip (mm)",
+                    font_size=ft_size,
                     width=width,
                     color='y')
     ax.set_ylim(top=daily_totals.max()*1.1)
-    ax.legend((r1[0], r2[0]), ("Depth", "St. Dev"))
+    ax.legend((r1[0], r2[0]), ("Depth", "St. Dev"), ncol=2, fontsize=ft_size)
     fig.tight_layout()
-    plt.savefig(filename)
+    plt.savefig(filename, dpi=300)
 
 
-def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, label):
+def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, label, **kwargs):
     ply = get_outline_polygon()
     ax.add_patch(PolygonPatch(ply, fc='lightgrey', ec='grey', alpha=0.3))
     ax.axis([3700, 3730, 1050, 1070])
@@ -263,8 +266,8 @@ def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, label):
                         fontsize=2
                         )
     title = title.split(" ")[-1] if ":" in title else title
-    ax.set_title(title, fontsize=15, weight="bold")
-    ax.tick_params(labelsize=14)
+    ax.set_title(title, fontsize=kwargs.get('font_size'), weight="bold")
+    ax.tick_params(labelsize=kwargs.get('font_size'))
     ax.locator_params(nbins=2)
     return sc
 
@@ -278,16 +281,17 @@ def plot_scatter_subplots(df, **kwargs):
     :return:void
     '''
     k = kwargs
+    font_size = 9
     num_cols = len(df.columns[3:])
     if num_cols < 2:
         fig, a = plt.subplots(1, figsize=(6, 4.2), sharex=True, sharey=True)
         a = [a]
     elif num_cols<20:
         rows = int(math.ceil(num_cols/4.))
-        fig, a = plt.subplots(rows, 4, sharex=True, sharey=True, figsize=(10, rows*2))
+        fig, a = plt.subplots(rows, 4, sharex=True, sharey=True, figsize=(6.5, rows*1.4))
         a = a.ravel()
     else:
-        fig, a = plt.subplots(5, 4, sharex=True, sharey=True, figsize=(10, 10))
+        fig, a = plt.subplots(5, 4, sharex=True, sharey=True, figsize=(6.5, 6.5))
         a = a.ravel()
     for ax in a:
         ax.tick_params(labelsize=8)
@@ -308,17 +312,18 @@ def plot_scatter_subplots(df, **kwargs):
                            d[col],
                            c_limits,
                            k['marker_scale'],
-                           k.get('label', False))
+                           k.get('label', False),
+                           font_size=font_size)
         i += 1
     cax = fig.add_axes([0.815, 0.1, 0.025, 0.8])
     cb = fig.colorbar(sc, cax=cax)
-    cb.set_label(k['units'], fontsize=15)
-    fig.text(0.03, .5, "y [km]", rotation="vertical", fontsize=14)
-    fig.text(.45, 0.009, "x [km]", fontsize=14)
+    cb.set_label(k['units'], fontsize=font_size)
+    fig.text(0.02, .5, "y [km]", rotation="vertical", fontsize=font_size)
+    fig.text(.45, 0.03, "x [km]", fontsize=font_size)
     if ":" in col:
-        fig.suptitle(col.split(" ")[0], fontsize=15, weight='bold')
-        fig.subplots_adjust(top=.87, bottom=0.1)
-    plt.tick_params(labelsize=18)
+        fig.suptitle(col.split(" ")[0], fontsize=font_size, weight='bold')
+        fig.subplots_adjust(top=.83, bottom=0.15)
+    plt.tick_params(labelsize=font_size)
     plt.subplots_adjust(wspace=0.25, hspace=.3, right=0.8)
     plt.savefig(k['filename'], dpi=400)
     return fig, a
@@ -547,6 +552,7 @@ def exclude_zero_sum_days(raw_df):
         for date in dates:
             try:
                 if df1[date].precip_mm.sum() == 0:
+                    print site,",", date
                     raw_df.loc[df1[date]['index'], 'precip_mm'] = np.nan
             except KeyError:
                 continue
@@ -599,6 +605,7 @@ def update_db(table_name):
     update_table(table_name, df)
     return df
 
+
 def check_dir(d):
     if not os.path.exists(d):
         os.makedirs(d)
@@ -607,5 +614,3 @@ def check_dir(d):
 base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
 fig_dir = '{}figures/python/'.format(base_dir)
 data_dir = '{}data/'.format(base_dir)
-
-
