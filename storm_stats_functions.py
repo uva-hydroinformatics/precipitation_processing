@@ -25,10 +25,11 @@ plt.rcParams['animation.ffmpeg_path'] = \
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
     # set up db connection
-    db = "..\\..\\Data\\master.sqlite"
+    dir = os.path.dirname(__file__)
+    db_filename = os.path.join(dir, '../Data/master.sqlite')
 
     # connect to db
-    con = sqlite3.connect(db)
+    con = sqlite3.connect(db_filename)
 
     # run a query and get the results
     sql = 'SELECT * FROM {};'.format(table_name)  # your query goes here
