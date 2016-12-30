@@ -13,6 +13,9 @@ from descartes import PolygonPatch
 import shapefile
 import sqlite3
 
+basedir = os.path.dirname(__file__)
+data_dir = os.path.join(basedir, '../Data/')
+
 plt.rcParams['animation.ffmpeg_path'] = \
     'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static' \
     '\\ffmpeg-20160301-git-1c7e2cf-win64-static\\bin\\ffmpeg'
@@ -25,8 +28,8 @@ plt.rcParams['animation.ffmpeg_path'] = \
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
     # set up db connection
-    dir = os.path.dirname(__file__)
-    db_filename = os.path.join(dir, '../Data/master.sqlite')
+    global basedir
+    db_filename = os.path.join(basedir, 'master.sqlite')
 
     # connect to db
     con = sqlite3.connect(db_filename)
@@ -612,6 +615,3 @@ def check_dir(d):
         os.makedirs(d)
     return d
 
-base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
-fig_dir = '{}figures/python/'.format(base_dir)
-data_dir = '{}data/'.format(base_dir)

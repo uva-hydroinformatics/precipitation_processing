@@ -2,7 +2,7 @@ import arcpy
 from arcpy import env
 from arcpy.sa import *
 import pandas as pd
-from storm_stats_functions import check_dir, get_data_frame_from_table
+from storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
 import numpy as np
 import shutil, os, psutil, stat
 import time
@@ -114,11 +114,21 @@ def clearWSLocks(inputWS):
     return True
 
 
+def raster_mean_under_plygn(plygn, raster):
+    out_tab = "out_tab"
+    arcpy.sa.ZonalStatisticsAsTable(plygn, "FID", raster, out_tab, "DATA", "MEAN")
+    cur = arcpy.da.SearchCursor(out_tab, "MEAN")
+    for row in cur:
+        val = row[0]
+    arcpy.Delete_management(out_tab)
+    return val
+
+
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
-tpe = 'daily'
+tpe = 'hr'
 
 # get data from table
-df = get_data_frame_from_table('daily')
+df = get_data_frame_from_table('hr')
 a = df.ix[:, 4:]
 non_zero_dates = a.columns[a.sum() > 0]
 
@@ -151,7 +161,7 @@ res_df = pd.DataFrame(columns=['watershed_descr',
                                'var'])
 
 # do it these watersheds (according to arcid)
-for i in [0,1,2,3,4,5,6]:
+for i in [0, 1, 2, 3, 4, 5, 6]:
     hd = True  # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
@@ -181,7 +191,7 @@ for i in [0,1,2,3,4,5,6]:
     elif 'Plaza Trail' in wshed_descr:
         p = 2
 
-    ks = [0, p]
+    ks = [0]
     # do it for all the different number of removed stations
     for k in ks:
         if k > 0:
@@ -232,18 +242,14 @@ for i in [0,1,2,3,4,5,6]:
                                 out_var_file)
 
             # get mean of the kriged rain est surface of selected watershed
-            out_tab = "out_tab"
-            arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_est_file, out_tab, "DATA", "MEAN")
-            cur = arcpy.da.SearchCursor(out_tab, "MEAN")
-            for row in cur:
-                rain_est = row[0]
+            rain_est = raster_mean_under_plygn(plygn=sel, raster=out_est_file)
 
             # get mean of the kriged var surface of selected watershed
-            out_tab = "out_tab"
-            arcpy.sa.ZonalStatisticsAsTable(sel, "FID", out_var_file, out_tab, "DATA", "MEAN")
-            cur = arcpy.da.SearchCursor(out_tab, "MEAN")
-            for row in cur:
-                var_est = row[0]
+            var_est = raster_mean_under_plygn(plygn=sel, raster=out_var_file)
+
+            #get mean of nexrad data
+            nexrad_file_name = os.path.join(data_dir, "nexrad/20140908/KAKQ_DAA_20140908_200400.tif")
+            nexrad_est = raster_mean_under_plygn(plygn=sel, raster=nexrad_file_name)
 
             a = res_df.append({'watershed_descr': wshed_descr,
                                'time_stamp': date,
@@ -259,9 +265,8 @@ for i in [0,1,2,3,4,5,6]:
                      header=hd,
                      index=False)
             clearWSLocks(k_dir)
-            arcpy.Delete_management(out_tab)
             arcpy.Delete_management(out_var_file)
-            arcpy.Delete_management(out_est_file)
+            # arcpy.Delete_management(out_est_file)
             arcpy.Delete_management(rain_shp)
             arcpy.Delete_management(date_table)
             hd = False
