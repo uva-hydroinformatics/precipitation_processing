@@ -1,11 +1,10 @@
 import arcpy
 from arcpy import env
-from arcpy.sa import *
 import pandas as pd
 from storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
 import numpy as np
 import shutil, os, psutil, stat
-import time
+import datetime
 
 
 class ModelParams():
@@ -124,6 +123,44 @@ def raster_mean_under_plygn(plygn, raster):
     return val
 
 
+def make_date_shapefile(date, df):
+    # convert to excel then to table then to layer then to shapefile... phew!
+    date_df = df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
+    date_df = date_df[date_df[date].notnull()]
+    date_df.columns = ['site_name', 'x', 'y', 'src', 'z']
+    global k_dir
+    date_table = "{}/temp.xls".format(k_dir)
+    date_df.to_excel(date_table, index=False)
+
+    tbl = "tab.dbf"
+
+    arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
+
+    spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
+            r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
+    lyr = "Layer"
+    arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
+
+    shp = 'temp.shp'
+    arcpy.CopyFeatures_management(lyr, shp)
+    arcpy.Delete_management(date_table)
+    return shp
+
+
+def get_nexrad_file(ts):
+    ts_utc = ts + datetime.timedelta(hours=5)
+    d = os.path.join(data_dir, "nexrad/{}".format(ts.strftime('%Y%m%d')))
+    files = os.listdir(d)
+    nexrad_time_strings = [t.split("_")[-2] + t.split("_")[-1] for t in files]
+    nexrad_time_strings_cln = [t.split(".")[0] for t in nexrad_time_strings]
+    nexrad_times = [datetime.datetime.strptime(t, "%Y%m%d%H%M%S") for t in nexrad_time_strings_cln]
+    for i in range(len(nexrad_times)):
+        if ts_utc - datetime.timedelta(minutes=10) < nexrad_times[i] < ts_utc + datetime.timedelta(minutes=10):
+            return os.path.join(d, files[i])
+
+
+
+
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
 tpe = 'hr'
 
@@ -205,26 +242,10 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
             red_df = df
         # do it for all the dates
         for date in non_zero_dates:
-            j += 1
-            # convert to excel then to table then to layer then to shapefile... phew!
+            timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+
             check_dir(k_dir)
-            date_df = red_df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
-            date_df = date_df[date_df[date].notnull()]
-            date_df.columns = ['site_name', 'x', 'y', 'src', 'z']
-            date_table = "{}/temp.xls".format(k_dir)
-            date_df.to_excel(date_table, index=False)
-
-            tbl = "tab.dbf"
-
-            arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
-
-            spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
-                    r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
-            lyr = "Layer"
-            arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
-
-            rain_shp = 'temp.shp'
-            arcpy.CopyFeatures_management(lyr, rain_shp)
+            rain_shp = make_date_shapefile(date, red_df)
 
             #  get model params
             mp = ModelParams(tpe, date)
@@ -247,28 +268,32 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
             # get mean of the kriged var surface of selected watershed
             var_est = raster_mean_under_plygn(plygn=sel, raster=out_var_file)
 
-            #get mean of nexrad data
-            nexrad_file_name = os.path.join(data_dir, "nexrad/20140908/KAKQ_DAA_20140908_200400.tif")
-            nexrad_est = raster_mean_under_plygn(plygn=sel, raster=nexrad_file_name)
+            # get mean of nexrad data
+            nexrad_raster = "nex_prjd.tif"
+            nexrad_file_name = get_nexrad_file(timestamp)
+            arcpy.ProjectRaster_management(nexrad_file_name, nexrad_raster, out_est_file, "BILINEAR")
+            nexrad_est_in = raster_mean_under_plygn(plygn=sel, raster=nexrad_raster)
+            nexrad_est_mm = nexrad_est_in * 25.4
 
             a = res_df.append({'watershed_descr': wshed_descr,
                                'time_stamp': date,
                                'num_removed': k,
                                'dists': dists_removed,
-                               'stations_removed':stations_removed,
+                               'stations_removed': stations_removed,
                                'est': rain_est,
+                               'nex_est': nexrad_est_mm,
                                'var': var_est},
                               ignore_index=True)
 
-            a.to_csv("../Data/kriging results/{}/{}_{}.csv".format(tpe, tpe, wshed_descr),
+            a.to_csv("../Data/kriging results/{}/{}_{}_nex.csv".format(tpe, tpe, wshed_descr),
                      mode='a',
                      header=hd,
                      index=False)
-            clearWSLocks(k_dir)
+            # clearWSLocks(k_dir)
+            arcpy.Delete_management(nexrad_raster)
             arcpy.Delete_management(out_var_file)
-            # arcpy.Delete_management(out_est_file)
+            arcpy.Delete_management(out_est_file)
             arcpy.Delete_management(rain_shp)
-            arcpy.Delete_management(date_table)
             hd = False
             print "name: {}    date:{}    num_removed:{}".format(wshed_descr, date, k)
     arcpy.Delete_management(sel)
