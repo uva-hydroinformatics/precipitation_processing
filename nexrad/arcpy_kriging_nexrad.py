@@ -2,12 +2,14 @@ import arcpy
 from arcpy import env
 import pandas as pd
 from precipitation_processing.storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
-import numpy as np
-import shutil, os, psutil, stat
+import shutil
+import os
+import psutil
+import stat
 import datetime
 
 
-class ModelParams():
+class ModelParams:
     def __init__(self, tpe, d):
         if tpe == 'fifteen_min':
             tpe = 'fif'
@@ -43,7 +45,7 @@ def change_permissions_recursive(path):
             os.chmod(file, stat.S_IWRITE)
 
 
-def onerror(func, path, exc_info):
+def onerror(func, path):
     """
     Error handler for ``shutil.rmtree``.
 
@@ -170,10 +172,10 @@ def get_nexrad_file(ts):
         if abs(time_diff.total_seconds()) > abs(diff.total_seconds()):
             time_diff = diff
             nex_file = files[i]
-
-    return os.path.join(d, nex_file)
-
-
+    try:
+        return os.path.join(d, nex_file)
+    except UnboundLocalError:
+        return None
 
 
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
@@ -212,7 +214,7 @@ res_df = pd.DataFrame(columns=['watershed_descr',
                                'nex_file'])
 
 # do it these watersheds (according to arcid)
-hd = True  # makes it so there is a header for each file
+hd = False  # makes it so there is a header for each file
 for date in non_zero_dates:
     j += 1
     timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
@@ -260,15 +262,16 @@ for date in non_zero_dates:
         # get mean of nexrad data
         if nexrad_file_name:
             nexrad_est_in = raster_mean_under_plygn(plygn=sel, raster=nexrad_raster)
+            nexrad_file_name = nexrad_file_name.split("\\")[-1]
         else:
-            nexrad_est_in = None
+            nexrad_est_mm = None
         nexrad_est_mm = nexrad_est_in * 25.4 if nexrad_est_in else None
 
         a = res_df.append({'watershed_descr': wshed_descr,
                            'time_stamp': date,
                            'est': rain_est,
                            'nex_est': nexrad_est_mm,
-                           'nex_file': nexrad_file_name.split("\\")[-1],
+                           'nex_file': nexrad_file_name,
                            'var': var_est},
                           ignore_index=True)
 
@@ -286,5 +289,3 @@ for date in non_zero_dates:
     arcpy.Delete_management(out_var_file)
     arcpy.Delete_management(out_est_file)
     arcpy.Delete_management(rain_shp)
-# Todo: put in loop for each of the time steps
-# Todo: loop through each station removing one by one and see the effect on the rainfall estimation
