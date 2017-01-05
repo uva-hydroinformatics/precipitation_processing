@@ -1,7 +1,7 @@
 import arcpy
 from arcpy import env
 import pandas as pd
-from storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
+from precipitation_processing.storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
 import numpy as np
 import shutil, os, psutil, stat
 import datetime
@@ -153,14 +153,25 @@ def make_date_shapefile(date, df):
 
 def get_nexrad_file(ts):
     ts_utc = ts + datetime.timedelta(hours=5)
+    # check for daylight savings:
+    if (datetime.datetime(2016, 03, 13) > ts_utc > datetime.datetime(2015, 11, 01))\
+            or (datetime.datetime(2015, 03, 8) > ts_utc > datetime.datetime(2014, 11, 02)) \
+            or (datetime.datetime(2014, 03, 8) > ts_utc > datetime.datetime(2013, 11, 03)):
+        ts_utc += datetime.timedelta(hours=1)
+
     d = os.path.join(data_dir, "nexrad/{}".format(ts.strftime('%Y%m%d')))
     files = os.listdir(d)
     nexrad_time_strings = [t.split("_")[-2] + t.split("_")[-1] for t in files]
     nexrad_time_strings_cln = [t.split(".")[0] for t in nexrad_time_strings]
     nexrad_times = [datetime.datetime.strptime(t, "%Y%m%d%H%M%S") for t in nexrad_time_strings_cln]
+    time_diff = datetime.timedelta(hours=1)
     for i in range(len(nexrad_times)):
-        if ts_utc - datetime.timedelta(minutes=10) < nexrad_times[i] < ts_utc + datetime.timedelta(minutes=10):
-            return os.path.join(d, files[i])
+        diff = ts_utc - nexrad_times[i]
+        if abs(time_diff.total_seconds()) > abs(diff.total_seconds()):
+            time_diff = diff
+            nex_file = files[i]
+
+    return os.path.join(d, nex_file)
 
 
 
@@ -195,14 +206,14 @@ means = []
 j = 0
 res_df = pd.DataFrame(columns=['watershed_descr',
                                'time_stamp',
-                               'num_removed',
-                               'dists',
-                               'stations_removed',
                                'est',
-                               'var'])
+                               'var',
+                               'nex_est',
+                               'nex_file'])
 
 # do it these watersheds (according to arcid)
-for date in non_zero_dates[51:]:
+hd = True  # makes it so there is a header for each file
+for date in non_zero_dates:
     j += 1
     timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 
@@ -227,7 +238,6 @@ for date in non_zero_dates[51:]:
     nexrad_file_name = get_nexrad_file(timestamp)
     if nexrad_file_name:
         arcpy.ProjectRaster_management(nexrad_file_name, nexrad_raster, out_est_file, "BILINEAR")
-    hd = True  # makes it so there is a header for each file
     for i in [0, 1, 2, 3, 4, 5, 6]:
         # select individual watershed
         sel = "selection{}.shp".format(i)
@@ -258,17 +268,18 @@ for date in non_zero_dates[51:]:
                            'time_stamp': date,
                            'est': rain_est,
                            'nex_est': nexrad_est_mm,
+                           'nex_file': nexrad_file_name.split("\\")[-1],
                            'var': var_est},
                           ignore_index=True)
 
-        a.to_csv("../Data/kriging results/{}/nexrad/{}_{}_nex.csv".format(tpe, tpe, wshed_descr),
+        a.to_csv("../../Data/kriging results/{}/nexrad/{}_{}_nex.csv".format(tpe, tpe, wshed_descr),
                  mode='a',
                  header=hd,
                  index=False)
         # clearWSLocks(k_dir)
         print "name: {}    date:{}    num_removed:{}".format(wshed_descr, date, 0)
         arcpy.Delete_management(sel)
-        print "time step: {}".format(j)
+    print "time step: {}".format(j)
     hd = False
 
     arcpy.Delete_management(nexrad_raster)

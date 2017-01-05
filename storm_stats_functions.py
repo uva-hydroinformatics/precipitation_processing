@@ -92,7 +92,7 @@ def get_date_range():
     dr = [
                   20130702,  # dst
                   20131009,  # dst
-                  20140111,  # dst
+                  20140111,  # no dst
                   20140213,  # no dst
                   20140415,  # dst
                   20140425,  # dst
