@@ -13,23 +13,22 @@ from descartes import PolygonPatch
 import shapefile
 import sqlite3
 
-plt.rcParams['animation.ffmpeg_path'] = \
-    'C:\\Users\\jeff_dsktp\\Downloads\\ffmpeg-20160301-git-1c7e2cf-win64-static' \
-    '\\ffmpeg-20160301-git-1c7e2cf-win64-static\\bin\\ffmpeg'
+directory = os.path.dirname(__file__)
+db_filename = os.path.join(directory, "../Data/master.sqlite")
 
-########################################################################################################################
-# Data preparation functions ###########################################################################################
-########################################################################################################################
+
+plt.rcParams['animation.ffmpeg_path'] = \
+    'C:/Users/jeff_dsktp/Downloads/ffmpeg-20160301-git-1c7e2cf-win64-static' \
+    '/ffmpeg-20160301-git-1c7e2cf-win64-static/bin/ffmpeg'
+
+####################################################################################################
+# Data preparation functions #######################################################################
+####################################################################################################
 
 
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
-    # set up db connection
-    db = "..\\..\\Data\\master.sqlite"
-
-    # connect to db
-    con = sqlite3.connect(db)
-
+    con = sqlite3.connect(db_filename)
     # run a query and get the results
     sql = 'SELECT * FROM {};'.format(table_name)  # your query goes here
     df = pd.read_sql(sql, con)
@@ -49,7 +48,7 @@ def make_incremental(df, date_range):
             cum_precip_arr = np.array(xy_df['precip_mm'])
             incr_precip = [0]
             for i in range(len(cum_precip_arr)-1):
-                if cum_precip_arr[i+1] >= cum_precip_arr[i] and cum_precip_arr[i]>0 :
+                if cum_precip_arr[i+1] >= cum_precip_arr[i] > 0:
                     incr_precip.append(cum_precip_arr[i+1] - cum_precip_arr[i])
                 else:
                     non_cumulative_df = non_cumulative_df.append(location[1].iloc[[i]])
@@ -61,7 +60,7 @@ def make_incremental(df, date_range):
     return newdf
 
 
-def combine_data_frames():
+def combine_data_frames(exclude_zeros=True):
     hrsd_stations_in_study_area = ["MMPS-171",
                                    "MMPS-185",
                                    "MMPS-163",
@@ -78,7 +77,8 @@ def combine_data_frames():
     # prepare the data by pulling from the database and making the datetime the index
     df = get_data_frame_from_table('all_data')
     df['datetime'] = pd.to_datetime(df['datetime'])
-    df = exclude_zero_sum_days(df)
+    if exclude_zeros:
+        df = zero_sum_days_to_nan(df)
     df = df.set_index('datetime')
 
     return df
@@ -114,15 +114,16 @@ def get_date_range():
 
 def get_outline_polygon():
     # read in shapefile for city outline
-    d = "..\\..\\Data\\GIS\\vab_boundary_prj_m.shp"
+    d = "../../Data/GIS/vab_boundary_prj_m.shp"
     ps = shapefile.Reader(d)
     outline_poly = ps.iterShapes().next().__geo_interface__
 
     t = ()
     for i in range(len(outline_poly['coordinates'][0])):
         if outline_poly is not None:
-            t += ((outline_poly['coordinates'][0][i][0]/1000, outline_poly['coordinates'][0][i][1]/1000),)
-    t = ((t),)
+            t += ((outline_poly['coordinates'][0][i][0]/1000,
+                   outline_poly['coordinates'][0][i][1]/1000),)
+    t = t,
     outline_poly['coordinates'] = t
     return outline_poly
 
@@ -139,24 +140,25 @@ def read_sub_daily(table_name):
 
 def qc_wu(df):
     df = df.reset_index()
-    bad_sites = ['KVAVIRGI52', 'KVAVIRGI112', 'KVAVIRGI126', 'KVAVIRGI129', 'KVAVIRGI117', 'KVAVIRGI122',
-                 'KVAVIRGI147', 'KVAVIRGI137']
+    bad_sites = ['KVAVIRGI52', 'KVAVIRGI112', 'KVAVIRGI126', 'KVAVIRGI129', 'KVAVIRGI117',
+                 'KVAVIRGI122', 'KVAVIRGI147', 'KVAVIRGI137']
     for bs in bad_sites:
         df = df[df['site_name'] != bs]
     df = df.set_index('site_name')
     return df
 
 
-########################################################################################################################
-# Plotting functions ###################################################################################################
-########################################################################################################################
+####################################################################################################
+# Plotting functions ###############################################################################
+####################################################################################################
 
 
 def autolabel(ax, rects):
     # attach some text labels
     for rect in rects:
         height = rect.get_height()
-        if math.isnan(height): continue
+        if math.isnan(height):
+            continue
         ax.text(rect.get_x() + rect.get_width()/2., 1+height,
                 '%d' % int(height),
                 ha='center',
@@ -224,7 +226,7 @@ def plot_sum_by_day(summ_df, filename):
                     y,
                     title="",
                     xlabs=daily_totals.index,
-                    ylab="Cumulative total\n precip (mm)",
+                    ylab="Average Total Rainfall \n (mm)",
                     width=width,
                     font_size=ft_size,
                     color='b')
@@ -233,7 +235,7 @@ def plot_sum_by_day(summ_df, filename):
                     daily_std,
                     title="",
                     xlabs=daily_totals.index,
-                    ylab="Cumulative total\n precip (mm)",
+                    ylab="Average Total Rainfall \n (mm)",
                     font_size=ft_size,
                     width=width,
                     color='y')
@@ -273,20 +275,21 @@ def graph_scatter(ax, x, y, sites, title, scale, c_limits, marker_scale, label, 
 
 
 def plot_scatter_subplots(df, **kwargs):
-    '''
-    :param df: data frame to plot with site_name as index. must include x and y attributes. data starts from column
+    """
+    :param df: data frame to plot with site_name as index. must include x and y attributes.
+    data starts from column
      index 3
     :param kwargs: necessary kwargs: title, marker_scale, label(bool), title, units, dty (save
      directory), and type
     :return:void
-    '''
+    """
     k = kwargs
     font_size = 9
     num_cols = len(df.columns[3:])
     if num_cols < 2:
         fig, a = plt.subplots(1, figsize=(6, 4.2), sharex=True, sharey=True)
         a = [a]
-    elif num_cols<20:
+    elif num_cols < 20:
         rows = int(math.ceil(num_cols/4.))
         fig, a = plt.subplots(rows, 4, sharex=True, sharey=True, figsize=(6.5, rows*1.4))
         a = a.ravel()
@@ -423,11 +426,11 @@ def create_animation(df, dty):
     # plt.show()
 
 
-########################################################################################################################
-# Data aggregation type functions ######################################################################################
-########################################################################################################################
+####################################################################################################
+# Data aggregation type functions ##################################################################
+####################################################################################################
 def get_empty_summary_df():
-    # create an empty dataframe with just the site_names, xs, ys, and srcs to fill in the summary data
+    # create an empty df with just the site_names, xs, ys, and srcs to fill in the summary data
     empty_daily_tots_df = get_data_frame_from_table('sites_list')
     empty_daily_tots_df = empty_daily_tots_df.set_index('site_name')
     empty_daily_tots_df['x'] = pd.to_numeric(empty_daily_tots_df['x'])
@@ -443,9 +446,9 @@ def get_daily_aggregate(df, date, time_step):
     return df_agg
 
 
-def get_daily_tots_df():
+def get_daily_tots_df(exclude_zeros=True, qc=True):
         summary_df = get_empty_summary_df()
-        df = combine_data_frames()
+        df = combine_data_frames(exclude_zeros=exclude_zeros)
         for date in get_date_range():
             daily_tot = get_daily_aggregate(df, date, "D")
             daily_tot = daily_tot.sum(level="site_name")
@@ -453,8 +456,10 @@ def get_daily_tots_df():
             # add to summary dataframe
             daily_tot.rename(columns={'precip_mm': date}, inplace=True)
             summary_df = summary_df.join(daily_tot[date])
-        summary_df = qc_wu(summary_df)
-        return summary_df
+        if qc:
+            return qc_wu(summary_df)
+        else:
+            return summary_df
 
 
 def get_subdaily_df(time_step):
@@ -499,9 +504,9 @@ def get_subdaily_df(time_step):
 def combine_sub_daily_dfs(df_list):
     summ_df = get_empty_summary_df()
     for df in df_list:
-        summ_df = summ_df.join(df[1].ix[:,3:])
+        summ_df = summ_df.join(df[1].ix[:, 3:])
     a = summ_df.iloc[:, 3:].sum()
-    a = a[a>0]
+    a = a[a > 0]
     cols = ['x', 'y', 'src']
     cols.extend(a.index)
     summ_df = summ_df.loc[:, cols]
@@ -516,14 +521,17 @@ def get_storm_durations(df, date_range, trim_percent):
         time_sums = df_agg.sum(level="datetime")
         cum_percent = time_sums.cumsum()/time_sums.sum()
         trimmed_indices = \
-            cum_percent[(cum_percent['precip_mm']>trim_percent) & (cum_percent['precip_mm']<(1-trim_percent))].index
+            cum_percent[(cum_percent['precip_mm'] > trim_percent) &
+                        (cum_percent['precip_mm'] < (1-trim_percent))].index
         start_time = trimmed_indices.min()
         end_time = trimmed_indices.max()
         duration = (end_time-start_time).total_seconds()/3600
         if i == 0:
-            dur_df = pd.DataFrame({'start_time': [start_time], 'end_time':[end_time], 'date': [date], 'duration (hr)': [duration]})
+            dur_df = pd.DataFrame({'start_time': [start_time], 'end_time':[end_time],
+                                   'date': [date], 'duration (hr)': [duration]})
         else:
-            dur_df = dur_df.append({'start_time': start_time, 'end_time':end_time, 'date': date, 'duration (hr)': duration}, ignore_index=True)
+            dur_df = dur_df.append({'start_time': start_time, 'end_time':end_time, 'date': date,
+                                    'duration (hr)': duration}, ignore_index=True)
         i=1
     dur_df = dur_df.set_index("date")
     return dur_df
@@ -544,15 +552,15 @@ def get_daily_max_intensities(df, date_range, time_step):
     return summary_df
 
 
-def exclude_zero_sum_days(raw_df):
+def zero_sum_days_to_nan(raw_df):
     dates = get_date_range()
     for site in raw_df.site_name.unique():
         df1 = raw_df[raw_df.site_name == site]
         df1.set_index('datetime', inplace=True)
         for date in dates:
             try:
-                if df1[date].precip_mm.sum() == 0:
-                    print site,",", date
+                if df1[date].precip_mm.sum() == 0 and not df1[date].empty:
+                    print site, ",", date
                     raw_df.loc[df1[date]['index'], 'precip_mm'] = np.nan
             except KeyError:
                 continue
@@ -561,13 +569,27 @@ def exclude_zero_sum_days(raw_df):
 
 def create_summary_table(summ_df, mdih, mdif, dty, file_name):
     dur_df = get_storm_durations(summ_df, get_date_range(), 0.025)
-    overall_summary_df_by_date = dur_df.join(pd.DataFrame({'mean_total_rainfall_volume (mm)': summ_df.mean()}))
-    overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'st. dev (mm)': summ_df.std()}))
-    overall_summary_df_by_date['average_intensity (mm/hr)'] = overall_summary_df_by_date['mean_total_rainfall_volume (mm)']/overall_summary_df_by_date['duration (hr)']
-    overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_hourly_intensity (mm/hr)': mdih.mean()}))
-    overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_hourly_intensity (mm/hr)': mdih.max()}))
-    overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'mean_max_15min_intensity (mm/15 min)': mdif.mean()}))
-    overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame({'max_max_15min_intensity (mm/15 min)': mdif.max()}))
+    overall_summary_df_by_date = dur_df.join(pd.DataFrame(
+        {'mean_total_rainfall_volume (mm)': summ_df.mean()})
+    )
+    overall_summary_df_by_date = overall_summary_df_by_date.join(
+        pd.DataFrame({'st. dev (mm)': summ_df.std()})
+    )
+    overall_summary_df_by_date['average_intensity (mm/hr)'] = \
+        overall_summary_df_by_date['mean_total_rainfall_volume (mm)'] /\
+        overall_summary_df_by_date['duration (hr)']
+    overall_summary_df_by_date = overall_summary_df_by_date.join(
+        pd.DataFrame({'mean_max_hourly_intensity (mm/hr)': mdih.mean()})
+    )
+    overall_summary_df_by_date = overall_summary_df_by_date.join(
+        pd.DataFrame({'max_max_hourly_intensity (mm/hr)': mdih.max()})
+    )
+    overall_summary_df_by_date = overall_summary_df_by_date.join(
+        pd.DataFrame({'mean_max_15min_intensity (mm/15 min)': mdif.mean()})
+    )
+    overall_summary_df_by_date = overall_summary_df_by_date.join(pd.DataFrame(
+        {'max_max_15min_intensity (mm/15 min)': mdif.max()})
+    )
 
     # write to csv file ##
     overall_summary_df_by_date.to_csv("{}{}.csv".format(check_dir(dty), file_name))
@@ -582,7 +604,7 @@ def reformat_dates(dr):
 
 
 def update_table(table_name, df):
-    con = sqlite3.connect('../Data/master.sqlite')
+    con = sqlite3.connect(db_filename)
     c = con.cursor()
     c.execute('DROP TABLE {}'.format(table_name))
     df.to_sql(table_name, con)
