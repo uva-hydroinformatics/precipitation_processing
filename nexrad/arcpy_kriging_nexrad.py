@@ -1,13 +1,15 @@
 import arcpy
 from arcpy import env
 import pandas as pd
-from storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
-import numpy as np
-import shutil, os, psutil, stat
+from precipitation_processing.storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
+import shutil
+import os
+import psutil
+import stat
 import datetime
 
 
-class ModelParams():
+class ModelParams:
     def __init__(self, tpe, d):
         if tpe == 'fifteen_min':
             tpe = 'fif'
@@ -43,7 +45,7 @@ def change_permissions_recursive(path):
             os.chmod(file, stat.S_IWRITE)
 
 
-def onerror(func, path, exc_info):
+def onerror(func, path):
     """
     Error handler for ``shutil.rmtree``.
 
@@ -120,7 +122,10 @@ def raster_mean_under_plygn(plygn, raster):
     for row in cur:
         val = row[0]
     arcpy.Delete_management(out_tab)
-    return val
+    try:
+        return val
+    except UnboundLocalError:
+        return None
 
 
 def make_date_shapefile(date, df):
@@ -144,21 +149,33 @@ def make_date_shapefile(date, df):
     shp = 'temp.shp'
     arcpy.CopyFeatures_management(lyr, shp)
     arcpy.Delete_management(date_table)
+    arcpy.Delete_management(tbl)
     return shp
 
 
 def get_nexrad_file(ts):
     ts_utc = ts + datetime.timedelta(hours=5)
+    # check for daylight savings:
+    if (datetime.datetime(2016, 03, 13) > ts_utc > datetime.datetime(2015, 11, 01))\
+            or (datetime.datetime(2015, 03, 8) > ts_utc > datetime.datetime(2014, 11, 02)) \
+            or (datetime.datetime(2014, 03, 8) > ts_utc > datetime.datetime(2013, 11, 03)):
+        ts_utc += datetime.timedelta(hours=1)
+
     d = os.path.join(data_dir, "nexrad/{}".format(ts.strftime('%Y%m%d')))
     files = os.listdir(d)
     nexrad_time_strings = [t.split("_")[-2] + t.split("_")[-1] for t in files]
     nexrad_time_strings_cln = [t.split(".")[0] for t in nexrad_time_strings]
     nexrad_times = [datetime.datetime.strptime(t, "%Y%m%d%H%M%S") for t in nexrad_time_strings_cln]
+    time_diff = datetime.timedelta(hours=1)
     for i in range(len(nexrad_times)):
-        if ts_utc - datetime.timedelta(minutes=10) < nexrad_times[i] < ts_utc + datetime.timedelta(minutes=10):
-            return os.path.join(d, files[i])
-
-
+        diff = ts_utc - nexrad_times[i]
+        if abs(time_diff.total_seconds()) > abs(diff.total_seconds()):
+            time_diff = diff
+            nex_file = files[i]
+    try:
+        return os.path.join(d, nex_file)
+    except UnboundLocalError:
+        return None
 
 
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
@@ -191,111 +208,84 @@ means = []
 j = 0
 res_df = pd.DataFrame(columns=['watershed_descr',
                                'time_stamp',
-                               'num_removed',
-                               'dists',
-                               'stations_removed',
                                'est',
-                               'var'])
+                               'var',
+                               'nex_est',
+                               'nex_file'])
 
 # do it these watersheds (according to arcid)
-for i in [0, 1, 2, 3, 4, 5, 6]:
-    hd = True  # makes it so there is a header for each file
-    # select individual watershed
-    sel = "selection.shp"
-    arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
-    cur = arcpy.SearchCursor(sel)
-    for row in cur:
-        wshed_descr = row.getValue("Descript")
-        wshed_area = row.getValue("Area_sq_km")
-        wshed_x = row.getValue("x")
-        wshed_y = row.getValue("y")
-    if wshed_area < 0.001:
-        continue
+hd = False  # makes it so there is a header for each file
+for date in non_zero_dates:
+    j += 1
+    timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 
-    # take out p nearest points
-    if 'Kendall Street' in wshed_descr:
-        p = 2
-    elif 'Mortons Road' in wshed_descr:
-        p = 1
-    elif 'Great Neck Road' in wshed_descr:
-        p = 3
-    elif 'Baltic' in wshed_descr:
-        p = 1
-    elif 'Red Tide Road' in wshed_descr:
-        p = 3
-    elif 'Clubhouse' in wshed_descr:
-        p = 2
-    elif 'Plaza Trail' in wshed_descr:
-        p = 2
+    check_dir(k_dir)
+    rain_shp = make_date_shapefile(date, df)
 
-    ks = [0]
-    # do it for all the different number of removed stations
-    for k in ks:
-        if k > 0:
-            res = take_out_gages(df, wshed_x, wshed_y, k)
-            red_df = res[0]
-            dists_removed = res[1]
-            stations_removed = res[2]
-        else:
-            dists_removed = 0
-            stations_removed = ""
-            red_df = df
-        # do it for all the dates
-        for date in non_zero_dates:
-            timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+    #  get model params
+    mp = ModelParams(tpe, date)
 
-            check_dir(k_dir)
-            rain_shp = make_date_shapefile(date, red_df)
+    # do kriging
+    out_est_file = "rainEst"
+    cell_size = "61.3231323600002"
+    out_var_file = "var"
+    arcpy.gp.Kriging_sa(rain_shp,
+                        "z",
+                        out_est_file,
+                        "{} {} {} {} {}".format(mp.model_type, mp.lag_size, mp.range, mp.sill, mp.nugget),
+                        cell_size,
+                        "{} {}".format(mp.sample_type, mp.sample_num),
+                        out_var_file)
+    nexrad_raster = "nex_prjd.tif"
+    nexrad_file_name = get_nexrad_file(timestamp)
+    if nexrad_file_name:
+        arcpy.ProjectRaster_management(nexrad_file_name, nexrad_raster, out_est_file, "BILINEAR")
+    for i in [0, 1, 2, 3, 4, 5, 6]:
+        # select individual watershed
+        sel = "selection{}.shp".format(i)
+        arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
+        cur = arcpy.SearchCursor(sel)
+        for row in cur:
+            wshed_descr = row.getValue("Descript")
+            wshed_area = row.getValue("Area_sq_km")
+            wshed_x = row.getValue("x")
+            wshed_y = row.getValue("y")
+        if wshed_area < 0.001:
+            continue
 
-            #  get model params
-            mp = ModelParams(tpe, date)
+        # get mean of the kriged rain est surface of selected watershed
+        rain_est = raster_mean_under_plygn(plygn=sel, raster=out_est_file)
 
-            # do kriging
-            out_est_file = "rainEst"
-            cell_size = "61.3231323600002"
-            out_var_file = "var"
-            arcpy.gp.Kriging_sa(rain_shp,
-                                "z",
-                                out_est_file,
-                                "{} {} {} {} {}".format(mp.model_type, mp.lag_size, mp.range, mp.sill, mp.nugget),
-                                cell_size,
-                                "{} {}".format(mp.sample_type, mp.sample_num),
-                                out_var_file)
+        # get mean of the kriged var surface of selected watershed
+        var_est = raster_mean_under_plygn(plygn=sel, raster=out_var_file)
 
-            # get mean of the kriged rain est surface of selected watershed
-            rain_est = raster_mean_under_plygn(plygn=sel, raster=out_est_file)
-
-            # get mean of the kriged var surface of selected watershed
-            var_est = raster_mean_under_plygn(plygn=sel, raster=out_var_file)
-
-            # get mean of nexrad data
-            nexrad_raster = "nex_prjd.tif"
-            nexrad_file_name = get_nexrad_file(timestamp)
-            arcpy.ProjectRaster_management(nexrad_file_name, nexrad_raster, out_est_file, "BILINEAR")
+        # get mean of nexrad data
+        if nexrad_file_name:
             nexrad_est_in = raster_mean_under_plygn(plygn=sel, raster=nexrad_raster)
-            nexrad_est_mm = nexrad_est_in * 25.4
+            nexrad_file_name = nexrad_file_name.split("\\")[-1]
+        else:
+            nexrad_est_mm = None
+        nexrad_est_mm = nexrad_est_in * 25.4 if nexrad_est_in else None
 
-            a = res_df.append({'watershed_descr': wshed_descr,
-                               'time_stamp': date,
-                               'num_removed': k,
-                               'dists': dists_removed,
-                               'stations_removed': stations_removed,
-                               'est': rain_est,
-                               'nex_est': nexrad_est_mm,
-                               'var': var_est},
-                              ignore_index=True)
+        a = res_df.append({'watershed_descr': wshed_descr,
+                           'time_stamp': date,
+                           'est': rain_est,
+                           'nex_est': nexrad_est_mm,
+                           'nex_file': nexrad_file_name,
+                           'var': var_est},
+                          ignore_index=True)
 
-            a.to_csv("../Data/kriging results/{}/{}_{}_nex.csv".format(tpe, tpe, wshed_descr),
-                     mode='a',
-                     header=hd,
-                     index=False)
-            # clearWSLocks(k_dir)
-            arcpy.Delete_management(nexrad_raster)
-            arcpy.Delete_management(out_var_file)
-            arcpy.Delete_management(out_est_file)
-            arcpy.Delete_management(rain_shp)
-            hd = False
-            print "name: {}    date:{}    num_removed:{}".format(wshed_descr, date, k)
-    arcpy.Delete_management(sel)
-# Todo: put in loop for each of the time steps
-# Todo: loop through each station removing one by one and see the effect on the rainfall estimation
+        a.to_csv("../../Data/kriging results/{}/nexrad/{}_{}_nex.csv".format(tpe, tpe, wshed_descr),
+                 mode='a',
+                 header=hd,
+                 index=False)
+        # clearWSLocks(k_dir)
+        print "name: {}    date:{}    num_removed:{}".format(wshed_descr, date, 0)
+        arcpy.Delete_management(sel)
+    print "time step: {}".format(j)
+    hd = False
+
+    arcpy.Delete_management(nexrad_raster)
+    arcpy.Delete_management(out_var_file)
+    arcpy.Delete_management(out_est_file)
+    arcpy.Delete_management(rain_shp)

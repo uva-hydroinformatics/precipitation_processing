@@ -13,9 +13,9 @@ from descartes import PolygonPatch
 import shapefile
 import sqlite3
 
-directory = os.path.dirname(__file__)
-db_filename = os.path.join(directory, "../Data/master.sqlite")
-
+basedir = os.path.dirname(__file__)
+data_dir = os.path.join(basedir, '../Data/')
+db_filename = os.path.join(data_dir, 'master.sqlite')
 
 plt.rcParams['animation.ffmpeg_path'] = \
     'C:/Users/jeff_dsktp/Downloads/ffmpeg-20160301-git-1c7e2cf-win64-static' \
@@ -28,7 +28,12 @@ plt.rcParams['animation.ffmpeg_path'] = \
 
 def get_data_frame_from_table(table_name):
     print 'fetching data from database for {}'.format(table_name)
+    # set up db connection
+    global basedir
+
+    # connect to db
     con = sqlite3.connect(db_filename)
+
     # run a query and get the results
     sql = 'SELECT * FROM {};'.format(table_name)  # your query goes here
     df = pd.read_sql(sql, con)
@@ -86,26 +91,26 @@ def combine_data_frames(exclude_zeros=True):
 
 def get_date_range():
     dr = [
-                  20130702,
-                  20131009,
-                  20140111,
-                  20140213,
-                  20140415,
-                  20140425,
-                  20140710,
-                  20140818,
-                  20140908,
-                  20140909,
-                  20140913,
-                  20141126,
-                  20141224,
-                  20150414,
-                  20150602,
-                  20150624,
-                  20150807,
-                  20150820,
-                  20150930,
-                  20151002
+                  20130702,  # dst
+                  20131009,  # dst
+                  20140111,  # no dst
+                  20140213,  # no dst
+                  20140415,  # dst
+                  20140425,  # dst
+                  20140710,  # dst
+                  20140818,  # dst
+                  20140908,  # dst
+                  20140909,  # dst
+                  20140913,  # dst
+                  20141126,  # no dst
+                  20141224,  # no dst
+                  20150414,  # dst
+                  20150602,  # dst
+                  20150624,  # dst
+                  20150807,  # dst
+                  20150820,  # dst
+                  20150930,  # dst
+                  20151002   # dst
                   ]
 
     dr = reformat_dates(dr)
@@ -633,6 +638,3 @@ def check_dir(d):
         os.makedirs(d)
     return d
 
-base_dir = 'C:/Users/jeff_dsktp/Box Sync/Sadler_1stPaper/rainfall/'
-fig_dir = '{}figures/python/'.format(base_dir)
-data_dir = '{}data/'.format(base_dir)
