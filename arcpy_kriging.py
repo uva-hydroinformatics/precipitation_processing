@@ -162,17 +162,17 @@ def get_nexrad_file(ts):
 
 
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
-tpe = 'hr'
+tpe = 'daily_zeroes'
 
 # get data from table
-df = get_data_frame_from_table('hr')
+df = get_data_frame_from_table(tpe)
 a = df.ix[:, 4:]
 non_zero_dates = a.columns[a.sum() > 0]
 
 # set up arcpy environment
 arcpy.CheckOutExtension("spatial")
 env.extent = arcpy.Extent(3705690, 1051630, 3724920, 1068584)
-k_dir = 'C:/Users/jeff_dsktp/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging1'
+k_dir = 'C:/Users/Jeff/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging1'
 check_dir(k_dir)
 change_permissions_recursive(k_dir)
 os.chmod(k_dir, stat.S_IWRITE)
@@ -184,7 +184,7 @@ env.overwriteOutput = True
 env.workspace = k_dir
 
 # get watershed polygon and iterate through them
-shed_ply = "C:/Users/jeff_dsktp/Documents/Research/Sadler_1st_Paper/Manuscript/Data/GIS/problem_watersheds.shp"
+shed_ply = "C:/Users/Jeff/Documents/research/Sadler_1stPaper/manuscript/Data/GIS/problem_watersheds.shp"
 arcpy.MakeTableView_management(shed_ply, "table_view")
 num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
 means = []
@@ -198,7 +198,8 @@ res_df = pd.DataFrame(columns=['watershed_descr',
                                'var'])
 
 # do it these watersheds (according to arcid)
-for i in [0, 1, 2, 3, 4, 5, 6]:
+for i in [2, 3, 4, 5, 6]:
+# for i in [1]:
     hd = True  # makes it so there is a header for each file
     # select individual watershed
     sel = "selection.shp"
@@ -228,7 +229,8 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
     elif 'Plaza Trail' in wshed_descr:
         p = 2
 
-    ks = [0]
+    ks = range(12)
+    # ks = [12]
     # do it for all the different number of removed stations
     for k in ks:
         if k > 0:
@@ -242,7 +244,7 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
             red_df = df
         # do it for all the dates
         for date in non_zero_dates:
-            timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+            # timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 
             check_dir(k_dir)
             rain_shp = make_date_shapefile(date, red_df)
@@ -268,12 +270,10 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
             # get mean of the kriged var surface of selected watershed
             var_est = raster_mean_under_plygn(plygn=sel, raster=out_var_file)
 
-            # get mean of nexrad data
-            nexrad_raster = "nex_prjd.tif"
-            nexrad_file_name = get_nexrad_file(timestamp)
-            arcpy.ProjectRaster_management(nexrad_file_name, nexrad_raster, out_est_file, "BILINEAR")
-            nexrad_est_in = raster_mean_under_plygn(plygn=sel, raster=nexrad_raster)
-            nexrad_est_mm = nexrad_est_in * 25.4
+            # nexrad_file_name = get_nexrad_file(timestamp)
+            # arcpy.ProjectRaster_management(nexrad_file_name, nexrad_raster, out_est_file, "BILINEAR")
+            # nexrad_est_in = raster_mean_under_plygn(plygn=sel, raster=nexrad_raster)
+            # nexrad_est_mm = nexrad_est_in * 25.4
 
             a = res_df.append({'watershed_descr': wshed_descr,
                                'time_stamp': date,
@@ -281,16 +281,16 @@ for i in [0, 1, 2, 3, 4, 5, 6]:
                                'dists': dists_removed,
                                'stations_removed': stations_removed,
                                'est': rain_est,
-                               'nex_est': nexrad_est_mm,
+                               # 'nex_est': nexrad_est_mm,
                                'var': var_est},
                               ignore_index=True)
 
-            a.to_csv("../Data/kriging results/{}/{}_{}_nex.csv".format(tpe, tpe, wshed_descr),
+            a.to_csv("../Data/kriging results/{0}/{0}_{1}.csv".format(tpe, wshed_descr),
                      mode='a',
                      header=hd,
                      index=False)
             # clearWSLocks(k_dir)
-            arcpy.Delete_management(nexrad_raster)
+            # arcpy.Delete_management(nexrad_raster)
             arcpy.Delete_management(out_var_file)
             arcpy.Delete_management(out_est_file)
             arcpy.Delete_management(rain_shp)

@@ -17,9 +17,7 @@ basedir = os.path.dirname(__file__)
 data_dir = os.path.join(basedir, '../Data/')
 db_filename = os.path.join(data_dir, 'master.sqlite')
 
-plt.rcParams['animation.ffmpeg_path'] = \
-    'C:/Users/jeff_dsktp/Downloads/ffmpeg-20160301-git-1c7e2cf-win64-static' \
-    '/ffmpeg-20160301-git-1c7e2cf-win64-static/bin/ffmpeg'
+# plt.rcParams['animation.ffmpeg_path'] = 'C:/Users/jeff_dsktp/Downloads/ffmpeg-20160301-git-1c7e2cf-win64-static/ffmpeg-20160301-git-1c7e2cf-win64-static/bin/ffmpeg'
 
 ####################################################################################################
 # Data preparation functions #######################################################################
@@ -448,7 +446,7 @@ def get_daily_aggregate(df, date, time_step):
     # return a dataframe with the sum of the rainfall at a given point for a given time span
     df = df[date]
     df_gp = df.groupby(['x', 'y', 'site_name', 'src'])
-    df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
+    df_agg = df_gp.resample(time_step).agg({'precip_mm': np.sum})
     return df_agg
 
 
@@ -468,9 +466,9 @@ def get_daily_tots_df(exclude_zeros=True, qc=True):
             return summary_df
 
 
-def get_subdaily_df(time_step):
+def get_subdaily_df(time_step, exclude_zeros=True):
     date_range = get_date_range()
-    df = combine_data_frames()
+    df = combine_data_frames(exclude_zeros)
     dur_df = get_storm_durations(df, date_range, 0.025)
     summary_df = get_empty_summary_df()
     l = []
@@ -491,7 +489,7 @@ def get_subdaily_df(time_step):
 
         # aggregate
         df_gp = df_date.groupby(['x', 'y', 'site_name', 'src'])
-        df_agg = df_gp.resample(time_step, how={'precip_mm': 'sum'})
+        df_agg = df_gp.resample(time_step).agg({'precip_mm': np.sum})
         df_agg = df_agg.reset_index()
         df_agg = df_agg.set_index("datetime")
 

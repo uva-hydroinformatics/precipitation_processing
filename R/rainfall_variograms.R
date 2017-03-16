@@ -1,12 +1,11 @@
 library(RGeostats)
-library(XLConnect)
 library(DBI)
 library(RSQLite)
 
 #read in csvfile and change into rgeostats db object
-data_dir = "C:/Users/jeff_dsktp/Documents/Research/Sadler_1st_Paper/Manuscript/Data/"
+data_dir = "C:/Users/Jeff/Documents/research/Sadler_1stPaper/manuscript/Data/"
 con = dbConnect(RSQLite::SQLite(), dbname=paste(data_dir,"master.sqlite", sep=""))
-table = "daily"
+table = "hr_zeroes"
 rain.csv <- dbGetQuery(con, paste("select * from ", table, sep=""))
 non_zero_columns = which(colSums(rain.csv[-1:-4], na.rm=T) !=0) + 4
 

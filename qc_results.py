@@ -1,4 +1,4 @@
-from precipitation_processing.storm_stats_functions import read_sub_daily, get_daily_tots_df
+from storm_stats_functions import read_sub_daily, get_daily_tots_df
 
 
 def get_src_count(s, firstletters):
