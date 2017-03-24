@@ -2,14 +2,12 @@ import pandas as pd
 from storm_stats_functions import get_data_frame_from_table, data_dir
 
 
-
-
 def overall_summary(ts):
     df = pd.DataFrame()
     for t in ts:
         df1 = pd.read_csv('{0}kriging results/{1}/{1}_summary_single.csv'.format(data_dir, t))
         df = df.append(df1, ignore_index=True)
-    df.to_csv('all_summary_single.csv')
+    df.to_csv('all_summary_single_hz.csv')
 
 
 def summarize(res0, res1):
@@ -59,7 +57,7 @@ def summarize(res0, res1):
             'max_dist': max(dists),
             'min_dist': min(dists),
             'dists': dists,
-            'src':src,
+            'src': src,
             'stations_removed': stations_removed,
             'percent_recorded': percent_recorded
             }
@@ -113,7 +111,7 @@ names = ['Shore Drive and Kendall Street',
          'S. Rosemont and S. Plaza Trail']
 
 
-types = ['daily_zeroes']
+types = ['hr_zeroes']
 
-individual_summaries(names, types, single=False)
+individual_summaries(names, types, single=True)
 overall_summary(types)

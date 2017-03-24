@@ -1,9 +1,15 @@
+import gc
+import random
+import string
+import itertools
 import arcpy
 from arcpy import env
 import pandas as pd
 from storm_stats_functions import check_dir, get_data_frame_from_table, data_dir
-import numpy as np
-import shutil, os, psutil, stat
+import shutil
+import os
+import psutil
+import stat
 import datetime
 
 
@@ -123,28 +129,54 @@ def raster_mean_under_plygn(plygn, raster):
     return val
 
 
+def make_iterator_list(wshed_ids, dates, exp_num=1):
+    global wshed_df
+    if exp_num ==1:
+        overall_iterator_list = []
+        for i in wshed_ids:
+            num_removed = wshed_df[wshed_df.arcid == i]['numrem'].values[0]
+            iterator = itertools.product([i], [0, num_removed], dates)
+            i_list = [i for i in iterator]
+            overall_iterator_list.extend(i_list)
+    else:
+        iterator = itertools.product(wshed_ids, range(13), dates)
+        overall_iterator_list = [i for i in iterator]
+    return overall_iterator_list
+
+
 def make_date_shapefile(date, df):
     # convert to excel then to table then to layer then to shapefile... phew!
     date_df = df[['site_name', 'x', 'y', 'src', date]]  # get df for individual timestep
     date_df = date_df[date_df[date].notnull()]
     date_df.columns = ['site_name', 'x', 'y', 'src', 'z']
     global k_dir
-    date_table = "{}/temp.xls".format(k_dir)
-    date_df.to_excel(date_table, index=False)
+    rand_str = "".join(random.choice(string.lowercase) for i in range(4))
+    date_table = "date_csv{}.csv".format(rand_str)
+    date_df.to_csv(date_table, index=False)
+    tbl = "tab_{}.dbf".format(rand_str)
 
-    tbl = "tab.dbf"
-
-    arcpy.ExcelToTable_conversion(date_table, tbl, Sheet="Sheet1")
+    arcpy.TableToTable_conversion(date_table, k_dir, tbl)
 
     spref = r"Coordinate Systems/Projected Coordinate Systems/State Plane/Nad 1983/" \
             r"NAD 1983 HARN StatePlane Virginia South FIPS 4502 (Meters).prj"
-    lyr = "Layer"
+    lyr = "Layer_{}".format(rand_str)
     arcpy.MakeXYEventLayer_management(tbl, 'x', 'y', lyr, spref)
 
-    shp = 'temp.shp'
+    shp = 'temp_{}.shp'.format(rand_str)
     arcpy.CopyFeatures_management(lyr, shp)
     arcpy.Delete_management(date_table)
+    arcpy.Delete_management(lyr)
+    arcpy.Delete_management(tbl)
     return shp
+
+
+def filter_dates(all_dates, filt_dates):
+    dts = pd.to_datetime(all_dates)
+    dts_ser = pd.Series(dts, index=dts)
+    l = []
+    for f in filt_dates:
+        l.extend(dts_ser[f].index.strftime("%Y-%m-%d %H:%M:%S").tolist())
+    return l
 
 
 def get_nexrad_file(ts):
@@ -162,17 +194,20 @@ def get_nexrad_file(ts):
 
 
 # specify type; should be 'fifteen_min', 'hr', or 'daily'
-tpe = 'daily_zeroes'
+tpe = 'fif_zeroes'
 
 # get data from table
 df = get_data_frame_from_table(tpe)
 a = df.ix[:, 4:]
 non_zero_dates = a.columns[a.sum() > 0]
+filt_dates = ['2014-09-13', '2015-04-14', '2015-09-30', '2015-10-02']
+non_zero_dates = filter_dates(non_zero_dates, filt_dates)
+wshed_df = get_data_frame_from_table('wshed_ids')
 
 # set up arcpy environment
 arcpy.CheckOutExtension("spatial")
 env.extent = arcpy.Extent(3705690, 1051630, 3724920, 1068584)
-k_dir = 'C:/Users/Jeff/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging1'
+k_dir = 'C:/Users/Jeff/Google Drive/Hampton Roads GIS Data/VA_Beach_Data/kriging'
 check_dir(k_dir)
 change_permissions_recursive(k_dir)
 os.chmod(k_dir, stat.S_IWRITE)
@@ -185,10 +220,6 @@ env.workspace = k_dir
 
 # get watershed polygon and iterate through them
 shed_ply = "C:/Users/Jeff/Documents/research/Sadler_1stPaper/manuscript/Data/GIS/problem_watersheds.shp"
-arcpy.MakeTableView_management(shed_ply, "table_view")
-num_rows = int(arcpy.GetCount_management("table_view").getOutput(0))
-means = []
-j = 0
 res_df = pd.DataFrame(columns=['watershed_descr',
                                'time_stamp',
                                'num_removed',
@@ -198,53 +229,36 @@ res_df = pd.DataFrame(columns=['watershed_descr',
                                'var'])
 
 # do it these watersheds (according to arcid)
-for i in [2, 3, 4, 5, 6]:
-# for i in [1]:
-    hd = True  # makes it so there is a header for each file
-    # select individual watershed
-    sel = "selection.shp"
-    arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(i))
-    cur = arcpy.SearchCursor(sel)
-    for row in cur:
-        wshed_descr = row.getValue("Descript")
-        wshed_area = row.getValue("Area_sq_km")
-        wshed_x = row.getValue("x")
-        wshed_y = row.getValue("y")
-    if wshed_area < 0.001:
-        continue
+iterator_list = make_iterator_list(range(1, 7), non_zero_dates)
+for i in iterator_list[822:]:
+    counter = iterator_list.index(i)
 
-    # take out p nearest points
-    if 'Kendall Street' in wshed_descr:
-        p = 2
-    elif 'Mortons Road' in wshed_descr:
-        p = 1
-    elif 'Great Neck Road' in wshed_descr:
-        p = 3
-    elif 'Baltic' in wshed_descr:
-        p = 1
-    elif 'Red Tide Road' in wshed_descr:
-        p = 3
-    elif 'Clubhouse' in wshed_descr:
-        p = 2
-    elif 'Plaza Trail' in wshed_descr:
-        p = 2
+    wshed_id = i[0]
+    num_removed = i[1]
+    date = i[2]
+    while True:
+        # select individual watershed
+        try:
+            sel = "selection.shp"
+            arcpy.Select_analysis(shed_ply, sel, '"FID" = {}'.format(wshed_id))
+            i_wshed_df = wshed_df[wshed_df.arcid == wshed_id]
+            wshed_descr = i_wshed_df['Description'].values[0]
+            wshed_area = i_wshed_df['Area_sq_km'].values[0]
+            wshed_x = i_wshed_df['x'].values[0]
+            wshed_y = i_wshed_df['y'].values[0]
 
-    ks = range(12)
-    # ks = [12]
-    # do it for all the different number of removed stations
-    for k in ks:
-        if k > 0:
-            res = take_out_gages(df, wshed_x, wshed_y, k)
-            red_df = res[0]
-            dists_removed = res[1]
-            stations_removed = res[2]
-        else:
-            dists_removed = 0
-            stations_removed = ""
-            red_df = df
-        # do it for all the dates
-        for date in non_zero_dates:
-            # timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+            # do it for all the different number of removed stations
+            if num_removed > 0:
+                res = take_out_gages(df, wshed_x, wshed_y, num_removed)
+                red_df = res[0]
+                dists_removed = res[1]
+                stations_removed = res[2]
+            else:
+                dists_removed = 0
+                stations_removed = ""
+                red_df = df
+            # do it for all the dates
+                # timestamp = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 
             check_dir(k_dir)
             rain_shp = make_date_shapefile(date, red_df)
@@ -277,7 +291,7 @@ for i in [2, 3, 4, 5, 6]:
 
             a = res_df.append({'watershed_descr': wshed_descr,
                                'time_stamp': date,
-                               'num_removed': k,
+                               'num_removed': num_removed,
                                'dists': dists_removed,
                                'stations_removed': stations_removed,
                                'est': rain_est,
@@ -287,15 +301,21 @@ for i in [2, 3, 4, 5, 6]:
 
             a.to_csv("../Data/kriging results/{0}/{0}_{1}.csv".format(tpe, wshed_descr),
                      mode='a',
-                     header=hd,
+                     header=False,
                      index=False)
             # clearWSLocks(k_dir)
-            # arcpy.Delete_management(nexrad_raster)
+            # arcpy.delete_management(nexrad_raster)
+            gc.collect()
             arcpy.Delete_management(out_var_file)
             arcpy.Delete_management(out_est_file)
             arcpy.Delete_management(rain_shp)
-            hd = False
-            print "name: {}    date:{}    num_removed:{}".format(wshed_descr, date, k)
-    arcpy.Delete_management(sel)
-# Todo: put in loop for each of the time steps
+            print "name: {}    date:{}    num_removed:{}   iteration:{}".format(
+                wshed_descr, date, num_removed, counter
+            )
+            arcpy.Delete_management(sel)
+        except UnboundLocalError:
+            print "we have a problem"
+            continue
+        break
+    # Todo: put in loop for each of the time steps
 # Todo: loop through each station removing one by one and see the effect on the rainfall estimation
