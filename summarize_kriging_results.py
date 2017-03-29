@@ -7,7 +7,7 @@ def overall_summary(ts):
     for t in ts:
         df1 = pd.read_csv('{0}kriging results/{1}/{1}_summary_single.csv'.format(data_dir, t))
         df = df.append(df1, ignore_index=True)
-    df.to_csv('all_summary_single_hz.csv')
+    df.to_csv('{}kriging results/all_summary_single_z.csv'.format(data_dir))
 
 
 def summarize(res0, res1):
@@ -70,6 +70,7 @@ def individual_summaries(names, types, single):
         for n in names:
             f = '{0}kriging results/{1}/{1}_{2}.csv'.format(data_dir, typ, n)
             df = pd.read_table(f, sep=',')
+            df.sort_values(['watershed_descr', 'num_removed', 'time_stamp'], inplace=True)
 
             #change negative estimates to 0
             neg_indices = df.est[df.est < 0].index
@@ -111,7 +112,7 @@ names = ['Shore Drive and Kendall Street',
          'S. Rosemont and S. Plaza Trail']
 
 
-types = ['hr_zeroes']
+types = ['daily_zeroes', 'hr_zeroes', 'fif_zeroes']
 
 individual_summaries(names, types, single=True)
 overall_summary(types)

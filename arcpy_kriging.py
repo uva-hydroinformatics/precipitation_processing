@@ -229,8 +229,8 @@ res_df = pd.DataFrame(columns=['watershed_descr',
                                'var'])
 
 # do it these watersheds (according to arcid)
-iterator_list = make_iterator_list(range(1, 7), non_zero_dates)
-for i in iterator_list[822:]:
+iterator_list = make_iterator_list(wshed_ids=[0], dates=non_zero_dates)
+for i in iterator_list:
     counter = iterator_list.index(i)
 
     wshed_id = i[0]
